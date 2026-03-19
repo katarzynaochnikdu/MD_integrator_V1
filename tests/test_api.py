@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+from app.config import settings
 from app.main import app
 from app.medidesk_client import MedideskResult
 
@@ -103,3 +104,16 @@ class TestSubmitContact:
         args, kwargs = mock_submit.call_args
         captcha_value = kwargs.get("captcha_token") or args[1]
         assert captcha_value == "valid-token"
+
+
+class TestDemoContactPage:
+    def test_demo_disabled_by_default(self):
+        resp = client.get("/demo/contact")
+        assert resp.status_code == 404
+
+    def test_demo_served_when_enabled(self, monkeypatch):
+        monkeypatch.setattr(settings, "demo_page_enabled", True)
+        resp = client.get("/demo/contact")
+        assert resp.status_code == 200
+        assert "grecaptcha" in resp.text
+        assert settings.recaptcha_site_key in resp.text

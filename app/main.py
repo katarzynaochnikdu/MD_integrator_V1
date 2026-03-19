@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from fastapi import FastAPI, UploadFile, File, Form
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
+from starlette.middleware.cors import CORSMiddleware
 
+from app.config import settings
 from app.mapper import build_medidesk_payload
 from app.medidesk_client import (
     submit_form,
@@ -25,6 +28,32 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Medidesk Integrator", version="1.0.0")
+
+if settings.cors_origins_list:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins_list,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+
+@app.get("/demo/contact", response_class=HTMLResponse, include_in_schema=False)
+async def demo_contact_page():
+    """Strona testowa: reCAPTCHA + POST na /api/medidesk/contact bez ręcznego kopiowania tokenu.
+
+    Włącz na Renderze: MEDIDESK_DEMO_PAGE_ENABLED=true
+    """
+    if not settings.demo_page_enabled:
+        return HTMLResponse(
+            "<p>Strona demo wyłączona. Ustaw <code>MEDIDESK_DEMO_PAGE_ENABLED=true</code>.</p>",
+            status_code=404,
+        )
+    path = Path(__file__).resolve().parent / "demo_contact.html"
+    html = path.read_text(encoding="utf-8")
+    html = html.replace("__RECAPTCHA_SITE_KEY__", settings.recaptcha_site_key)
+    return HTMLResponse(content=html)
 
 
 @app.post(

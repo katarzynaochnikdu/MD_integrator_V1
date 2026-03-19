@@ -1,18 +1,49 @@
-{
-  "platform": "fb",
-  "leadgenId": "9876543210123456",
-  "formId": "1234567890123456",
-  "isOrganic": false,
-  "campaignName": "[LEADY] Umów wizytę",
-  "dateCreated": "2026-03-19T10:15:00.000Z",
-  "data": {
-    "full_name": "Anna Nowak",
-    "phone_number": "+48501234567",
-    "email": "anna.nowak@gmail.com",
-    "w_czym_możemy_pomóc?": "Umówienie wizyty",
-    "dodatkowa_informacja": "Chciałabym umówić wizytę u ortopedy na przyszły tydzień"
-  },
-  "customDisclaimerResponses": {
-    "wyrażam_zgodę_na_kontakt_zwrotny_telefonicznie_lub_mailowo": true
+[
+  {
+    "platform": "fb",
+    "leadgenId": "9876543210123456",
+    "formId": "1234567890123456",
+    "isOrganic": false,
+    "adId": "120224030183920605",
+    "adName": "Lead Ads - Umów wizytę",
+    "adsetId": "120224030183930605",
+    "adsetName": "Advantage+",
+    "campaignId": "120215267433170605",
+    "campaignName": "[LEADY] Umów wizytę",
+    "dateCreated": "2026-03-19T10:15:00.000Z",
+    "data": {
+      "full_name": "Anna Nowak",
+      "phone_number": "+48501234567",
+      "email": "anna.nowak@gmail.com",
+      "w_czym_możemy_pomóc?": "Umówienie wizyty",
+      "dodatkowa_informacja": "Chciałabym umówić wizytę u ortopedy, najlepiej w przyszłym tygodniu rano"
+    },
+    "mappable_field_data": [
+      {
+        "name": "full_name",
+        "value": "Anna Nowak"
+      },
+      {
+        "name": "phone_number",
+        "value": "+48501234567"
+      },
+      {
+        "name": "email",
+        "value": "anna.nowak@gmail.com"
+      },
+      {
+        "name": "w_czym_możemy_pomóc?",
+        "value": "Umówienie wizyty"
+      },
+      {
+        "name": "dodatkowa_informacja",
+        "value": "Chciałabym umówić wizytę u ortopedy, najlepiej w przyszłym tygodniu rano"
+      }
+    ],
+    "customDisclaimerResponses": {
+      "wyrażam_zgodę_na_kontakt_zwrotny_telefonicznie_lub_mailowo.": true
+    },
+    "pageId": "277804452739878",
+    "adgroupId": "120224030183920605"
   }
-}
+]

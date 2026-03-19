@@ -1,3 +1,11 @@
+Formularz kontaktowy
+ID: d908ee01-0b7d-44a0-a494-a707ab5a55ef
+Poniżej znajduje się przykładowy kod HTML formularza pomocny w przypadku jego statycznej implementacji na stronie placówki.
+
+Zastosowanie tego kodu będzie wymagało obsługi przesłania formularza po stronie serwera placówki i wykonanie odpowiedniego żądania do aplikacji Medidesk (szczegóły zostały opisane w zakładce Specyfikacja API ).
+
+Końcowy format kodu HTML, jak i kwestia jego odpowiedniego ostylowania, pozostaje w gestii wdrażającego rozwiązanie.
+
 Poniżej znajduje się przykładowy kod HTML formularza pomocny w przypadku jego statycznej implementacji na stronie placówki.
 
 Zastosowanie tego kodu będzie wymagało obsługi przesłania formularza po stronie serwera placówki i wykonanie odpowiedniego żądania do aplikacji Medidesk (szczegóły zostały opisane w zakładce Specyfikacja API ).

@@ -1,0 +1,9 @@
+{
+  "captchaToken": "WKLEJ_TUTAJ_TOKEN_Z_grecaptcha_execute",
+  "fullName": "Jan Kowalski",
+  "phone": "+48500600700",
+  "email": "jan@kowalski.pl",
+  "topic": "Umówienie wizyty",
+  "message": "Treść wiadomości testowej – sprawdzenie integracji z Medidesk.",
+  "consent": true
+}
