@@ -1,0 +1,18 @@
+{
+  "platform": "fb",
+  "leadgenId": "9876543210123456",
+  "formId": "1234567890123456",
+  "isOrganic": false,
+  "campaignName": "[LEADY] Umów wizytę",
+  "dateCreated": "2026-03-19T10:15:00.000Z",
+  "data": {
+    "full_name": "Anna Nowak",
+    "phone_number": "+48501234567",
+    "email": "anna.nowak@gmail.com",
+    "w_czym_możemy_pomóc?": "Umówienie wizyty",
+    "dodatkowa_informacja": "Chciałabym umówić wizytę u ortopedy na przyszły tydzień"
+  },
+  "customDisclaimerResponses": {
+    "wyrażam_zgodę_na_kontakt_zwrotny_telefonicznie_lub_mailowo": true
+  }
+}

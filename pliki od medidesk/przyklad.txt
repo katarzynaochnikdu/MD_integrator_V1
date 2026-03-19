@@ -1,0 +1,48 @@
+Poniżej znajduje się przykładowy kod HTML formularza pomocny w przypadku jego statycznej implementacji na stronie placówki.
+
+Zastosowanie tego kodu będzie wymagało obsługi przesłania formularza po stronie serwera placówki i wykonanie odpowiedniego żądania do aplikacji Medidesk (szczegóły zostały opisane w zakładce Specyfikacja API ).
+
+Końcowy format kodu HTML, jak i kwestia jego odpowiedniego ostylowania, pozostaje w gestii wdrażającego rozwiązanie.
+
+Przykładowy kod HTML formularza
+<form>
+    <div>
+        <label for="medidesk-form-field-Imię-i-Nazwisko">Imię i Nazwisko</label>
+        <input id="medidesk-form-field-Imię-i-Nazwisko" type="text" name="Imię-i-Nazwisko">
+    </div>
+    <div>
+        <label for="medidesk-form-field-Telefon">Telefon</label>
+        <input id="medidesk-form-field-Telefon" type="text" name="Telefon">
+    </div>
+    <div>
+        <label for="medidesk-form-field-E-mail">E-mail</label>
+        <input id="medidesk-form-field-E-mail" type="text" name="E-mail">
+    </div>
+    <div>
+        <label for="medidesk-form-field-W-czym-możemy-pomóc-">W czym możemy pomóc?</label>
+        <select id="medidesk-form-field-W-czym-możemy-pomóc-" name="W-czym-możemy-pomóc-">
+            <option value="Umówienie wizyty">Umówienie wizyty</option>
+            <option value="Umówienie badań - USG">Umówienie badań - USG</option>
+            <option value="Odwołanie wizyty">Odwołanie wizyty</option>
+            <option value="Zmiana terminu">Zmiana terminu</option>
+            <option value="Inna">Inna</option>
+        </select>
+    </div>
+    <div>
+        <label for="medidesk-form-field-Dodatkowa-informacja">Dodatkowa informacja</label>
+        <textarea id="medidesk-form-field-Dodatkowa-informacja" name="Dodatkowa-informacja"></textarea>
+    </div>
+    <div>
+        <label for="medidesk-form-field-Załączniki">Załączniki</label>
+        <input id="medidesk-form-field-Załączniki" type="file" name="Załączniki">
+    </div>
+    <div>
+        <input id="medidesk-form-field-Wyrażam-zgodę-na-kontakt-zwrotny-telefonicznie-lub-mailowo-" type="checkbox" name="Wyrażam-zgodę-na-kontakt-zwrotny-telefonicznie-lub-mailowo-" value="true">
+        <label for="medidesk-form-field-Wyrażam-zgodę-na-kontakt-zwrotny-telefonicznie-lub-mailowo-">Wyrażam zgodę na kontakt zwrotny telefonicznie lub mailowo.</label>
+    </div>
+    <div>
+        <label for="medidesk-form-field-Dodaj-zdjęcie">Dodaj zdjęcie</label>
+        <input id="medidesk-form-field-Dodaj-zdjęcie" type="file" name="Dodaj-zdjęcie">
+    </div>
+    <button type="submit">Wyślij</button>
+</form>
