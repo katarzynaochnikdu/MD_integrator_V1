@@ -32,6 +32,17 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="Medidesk Integrator", version="1.0.0")
 
 
+@app.get("/")
+async def root():
+    """Render i przeglądarki często odpytują GET / – bez tej trasy byłby 404."""
+    return {
+        "service": "Medidesk Integrator",
+        "docs": "/docs",
+        "demo_contact": "/demo/contact",
+        "api_contact": "/api/medidesk/contact",
+    }
+
+
 def _upstream_error_response(result: MedideskResult) -> JSONResponse:
     """502 z opcjonalnymi szczegółami, gdy MEDIDESK_DEBUG_UPSTREAM=true."""
     kw: dict = {

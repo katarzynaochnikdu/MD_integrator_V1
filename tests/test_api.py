@@ -26,6 +26,14 @@ VALID_PAYLOAD = {
 }
 
 
+def test_root_returns_200():
+    resp = client.get("/")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "docs" in data
+    assert data["docs"] == "/docs"
+
+
 class TestSubmitContact:
     @patch("app.main.submit_form", new_callable=AsyncMock)
     def test_success(self, mock_submit):
