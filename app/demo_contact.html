@@ -10,7 +10,8 @@
     .layout { display: flex; max-width: 36rem; margin: 0 auto; padding: 1.2rem 1rem; gap: 1rem; min-height: 100vh; }
 
     .sidebar { width: 130px; flex-shrink: 0; padding-top: 0.5rem; }
-    .sidebar h3 { font-size: 0.65rem; color: #52525b; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.5rem; }
+    .sidebar h3 { font-size: 0.65rem; color: #52525b; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.5rem; padding-bottom: 0.4rem; }
+    .sidebar-box { border: 1px solid #27272a; border-radius: 8px; padding: 0.5rem; background: #13141b; }
     .set-btn {
       display: block; width: 100%; text-align: left; margin-bottom: 0.35rem;
       padding: 0.4rem 0.6rem; border: 1px solid #27272a; border-radius: 6px; background: #1a1b23;
@@ -74,8 +75,10 @@
 <body>
   <div class="layout">
     <aside class="sidebar">
-      <h3>Dane testowe</h3>
-      <div id="sets"></div>
+      <div class="sidebar-box">
+        <h3>Dane testowe dla leniwych</h3>
+        <div id="sets"></div>
+      </div>
     </aside>
     <div class="main">
       <div class="header">
@@ -94,9 +97,9 @@
     document.getElementById("fid").textContent = formId;
 
     const TEST_SETS = [
-      { name: "Anna Nowak", preview: "Ortopeda", values: { "Imie-i-nazwisko": "Anna Nowak", "Mail": "anna.nowak@gmail.com", "Telefon": "+48600700800", "Lista": "Opcja 1", "Zyczenie": "Wizyta u ortopedy", "zgoda": "true" } },
-      { name: "Marek Zielinski", preview: "USG", values: { "Imie-i-nazwisko": "Marek Zielinski", "Mail": "m.zielinski@wp.pl", "Telefon": "+48501234567", "Lista": "Opcja 2", "Zyczenie": "USG kolana", "zgoda": "true" } },
-      { name: "Ewa Kowalczyk", preview: "Kardiolog", values: { "Imie-i-nazwisko": "Ewa Kowalczyk", "Mail": "ewa.k@onet.pl", "Telefon": "+48512345678", "Lista": "Opcja 3", "Zyczenie": "Konsultacja po 16:00", "zgoda": "true" } },
+      { name: "Anna Nowak", values: { "Imie-i-nazwisko": "Anna Nowak", "Mail": "anna.nowak@gmail.com", "Telefon": "+48600700800", "Lista": "Opcja 1", "Zyczenie": "Wizyta u ortopedy w przyszlym tygodniu", "zgoda": "true" } },
+      { name: "Marek Zielinski", values: { "Imie-i-nazwisko": "Marek Zielinski", "Mail": "m.zielinski@wp.pl", "Telefon": "+48501234567", "Lista": "Opcja 2", "Zyczenie": "Prosze o kontakt po 16:00", "zgoda": "true" } },
+      { name: "Ewa Kowalczyk", values: { "Imie-i-nazwisko": "Ewa Kowalczyk", "Mail": "ewa.k@onet.pl", "Telefon": "+48512345678", "Lista": "Opcja 3", "Zyczenie": "Chce umowic wizyte dla dziecka", "zgoda": "true" } },
     ];
 
     const NICE_LABELS = {
@@ -119,7 +122,7 @@
     TEST_SETS.forEach(s => {
       const btn = document.createElement("button");
       btn.className = "set-btn";
-      btn.innerHTML = "<div class='name'>" + s.name + "</div><div class='preview'>" + s.preview + "</div>";
+      btn.innerHTML = "<div class='name'>" + s.name + "</div>";
       btn.addEventListener("click", () => {
         Object.entries(s.values).forEach(([k, v]) => {
           const el = document.querySelector("[name='" + k + "']");
