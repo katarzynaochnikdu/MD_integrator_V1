@@ -5,22 +5,38 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Test – Medidesk Integrator v2</title>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 36rem; margin: 2rem auto; padding: 0 1rem; }
-    h1 { font-size: 1.4rem; }
-    label { display: block; margin-top: 0.75rem; font-weight: 600; }
-    input, select, textarea { width: 100%; box-sizing: border-box; margin-top: 0.25rem; padding: 0.5rem; }
-    button { margin-top: 1rem; padding: 0.6rem 1.2rem; cursor: pointer; font-size: 1rem; }
-    #out { margin-top: 1rem; white-space: pre-wrap; font-size: 0.9rem; }
-    .err { color: #b00; } .ok { color: #060; }
-    .info { background: #f0f4ff; padding: 0.75rem; border-radius: 4px; font-size: 0.85rem; margin-bottom: 1rem; }
-    code { background: #eee; padding: 2px 4px; border-radius: 3px; }
+    body { font-family: system-ui, sans-serif; max-width: 36rem; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
+    h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
+    h2 { font-size: 1rem; color: #666; font-weight: 400; margin-top: 0; }
+    label { display: block; margin-top: 1rem; font-weight: 600; font-size: 0.9rem; color: #333; }
+    input, select, textarea {
+      width: 100%; box-sizing: border-box; margin-top: 0.3rem; padding: 0.6rem 0.75rem;
+      border: 1px solid #ccc; border-radius: 6px; font-size: 0.95rem;
+    }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: #1877f2; box-shadow: 0 0 0 2px rgba(24,119,242,0.15); }
+    textarea { resize: vertical; min-height: 80px; }
+    .checkbox-row { display: flex; align-items: center; gap: 0.5rem; margin-top: 1rem; }
+    .checkbox-row input { width: auto; margin: 0; }
+    .checkbox-row label { margin: 0; font-weight: 400; }
+    button {
+      margin-top: 1.5rem; padding: 0.7rem 1.5rem; cursor: pointer; font-size: 1rem;
+      background: #1877f2; color: #fff; border: none; border-radius: 6px; width: 100%;
+    }
+    button:hover { background: #166fe5; }
+    #out { margin-top: 1rem; white-space: pre-wrap; font-size: 0.85rem; padding: 0.75rem; border-radius: 6px; }
+    .err { color: #b00; background: #fff0f0; } .ok { color: #060; background: #f0fff0; }
+    .info { background: #f0f4ff; padding: 0.75rem; border-radius: 6px; font-size: 0.82rem; margin-bottom: 1.5rem; }
+    code { background: #e8ecf0; padding: 2px 5px; border-radius: 3px; font-size: 0.82rem; }
+    .badge { display: inline-block; background: #1877f2; color: #fff; font-size: 0.7rem; padding: 2px 6px; border-radius: 3px; vertical-align: middle; margin-left: 0.3rem; }
+    .field-hint { font-size: 0.78rem; color: #888; margin-top: 0.15rem; }
   </style>
 </head>
 <body>
-  <h1>Medidesk Integrator — test formularza</h1>
+  <h1>Symulacja leada z Facebook Ads</h1>
+  <h2>Medidesk Integrator — demo</h2>
   <div class="info">
-    <strong>Form ID:</strong> <code id="fid">d908ee01-0b7d-44a0-a494-a707ab5a55ef</code><br>
-    Pola ladowane dynamicznie z Medidesk. Bez captchy (urlencoded).
+    <strong>Formularz Medidesk:</strong> <code id="fid">d908ee01-0b7d-44a0-a494-a707ab5a55ef</code><br>
+    Pola ladowane dynamicznie z Medidesk API. Wysylka urlencoded bez captchy.
   </div>
   <div id="form-container">Ladowanie pol formularza...</div>
   <div id="out"></div>
@@ -30,6 +46,29 @@
     const formId = new URLSearchParams(location.search).get("form_id") || DEFAULT_FORM_ID;
     document.getElementById("fid").textContent = formId;
 
+    const NICE_LABELS = {
+      "Imie-i-nazwisko": "Imie i nazwisko",
+      "Mail": "Adres e-mail",
+      "Telefon": "Numer telefonu",
+      "Lista": "W czym mozemy pomoc?",
+      "Zyczenie": "Dodatkowe informacje",
+      "zgoda": "Wyrazam zgode na kontakt zwrotny",
+    };
+
+    const PLACEHOLDERS = {
+      "Imie-i-nazwisko": "np. Jan Kowalski",
+      "Mail": "np. jan.kowalski@gmail.com",
+      "Telefon": "np. +48 500 600 700",
+      "Zyczenie": "Opisz czego potrzebujesz...",
+    };
+
+    const TEST_VALUES = {
+      "Imie-i-nazwisko": "Anna Nowak",
+      "Mail": "anna.nowak@example.com",
+      "Telefon": "+48 600 700 800",
+      "Zyczenie": "Chcialbym umowic wizyte u specjalisty",
+    };
+
     const container = document.getElementById("form-container");
     const out = document.getElementById("out");
 
@@ -37,20 +76,40 @@
       .then(r => r.json())
       .then(data => {
         if (data.error) { container.innerHTML = "<p class='err'>" + data.error + "</p>"; return; }
+
         let html = "<form id='f'>";
         data.fields.forEach(f => {
+          const label = NICE_LABELS[f.fieldId] || f.name;
+          const ph = PLACEHOLDERS[f.fieldId] || "";
+          const tv = TEST_VALUES[f.fieldId] || "";
+          const req = f.required ? " *" : "";
+          const fbBadge = "<span class='badge'>FB</span>";
+
           if (f.type === "CHECKBOX") {
-            html += "<label><input type='checkbox' name='" + f.fieldId + "' value='true' " + (f.required ? "required" : "") + " /> " + f.name + "</label>";
+            html += "<div class='checkbox-row'>"
+              + "<input type='checkbox' id='cb_" + f.fieldId + "' name='" + f.fieldId + "' value='true' checked />"
+              + "<label for='cb_" + f.fieldId + "'>" + label + "</label>"
+              + "</div>";
           } else if (f.type === "SELECT" && f.options) {
-            html += "<label>" + f.name + "<select name='" + f.fieldId + "'>";
+            html += "<label>" + label + req + " " + fbBadge
+              + "<select name='" + f.fieldId + "'>";
             f.options.forEach(o => { html += "<option value='" + o + "'>" + o + "</option>"; });
-            html += "</select></label>";
+            html += "</select></label>"
+              + "<div class='field-hint'>fieldId: " + f.fieldId + "</div>";
+          } else if (f.type === "TEXT_AREA") {
+            html += "<label>" + label + req + " " + fbBadge
+              + "<textarea name='" + f.fieldId + "' placeholder='" + ph + "'" + (f.required ? " required" : "") + ">" + tv + "</textarea>"
+              + "</label>"
+              + "<div class='field-hint'>fieldId: " + f.fieldId + "</div>";
           } else {
             const inputType = f.type === "EMAIL" ? "email" : f.type === "PHONE" ? "tel" : "text";
-            html += "<label>" + f.name + " <input type='" + inputType + "' name='" + f.fieldId + "' " + (f.required ? "required" : "") + " /></label>";
+            html += "<label>" + label + req + " " + fbBadge
+              + "<input type='" + inputType + "' name='" + f.fieldId + "' placeholder='" + ph + "' value='" + tv + "'" + (f.required ? " required" : "") + " />"
+              + "</label>"
+              + "<div class='field-hint'>fieldId: " + f.fieldId + "</div>";
           }
         });
-        html += "<button type='submit'>Wyslij do Medidesk</button></form>";
+        html += "<button type='submit'>Wyslij lead do Medidesk</button></form>";
         container.innerHTML = html;
 
         document.getElementById("f").addEventListener("submit", function(e) {
@@ -71,12 +130,14 @@
           .then(r => r.json().then(d => ({ status: r.status, data: d })))
           .then(({ status, data }) => {
             out.className = status === 200 ? "ok" : "err";
-            out.textContent = "HTTP " + status + ":\n" + JSON.stringify(data, null, 2);
+            out.textContent = status === 200
+              ? "Lead wyslany! Sprawdz panel Medidesk.\n\n" + JSON.stringify(data, null, 2)
+              : "Blad HTTP " + status + ":\n" + JSON.stringify(data, null, 2);
           })
           .catch(err => { out.className = "err"; out.textContent = "Blad: " + err; });
         });
       })
-      .catch(err => { container.innerHTML = "<p class='err'>Blad ladowania: " + err + "</p>"; });
+      .catch(err => { container.innerHTML = "<p class='err'>Blad ladowania formularza: " + err + "</p>"; });
   </script>
 </body>
 </html>
