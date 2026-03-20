@@ -6,73 +6,86 @@
   <title>Test – Medidesk Integrator v2</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: system-ui, -apple-system, sans-serif; background: #0f1117; color: #e4e4e7; min-height: 100vh; }
-    .wrapper { max-width: 42rem; margin: 0 auto; padding: 2rem 1.5rem; }
-    h1 { font-size: 1.6rem; font-weight: 700; background: linear-gradient(135deg, #3b82f6, #a855f7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-    .subtitle { color: #71717a; font-size: 0.9rem; margin-top: 0.25rem; }
-    .meta-bar { display: flex; align-items: center; gap: 0.5rem; margin-top: 1rem; padding: 0.6rem 0.8rem; background: #1a1b23; border-radius: 8px; font-size: 0.8rem; color: #a1a1aa; }
-    .meta-bar code { background: #27272a; padding: 2px 6px; border-radius: 4px; color: #d4d4d8; font-size: 0.78rem; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: #0f1117; color: #e4e4e7; min-height: 100vh; font-size: 13px; }
+    .layout { display: flex; max-width: 64rem; margin: 0 auto; padding: 1.2rem 1rem; gap: 1.2rem; min-height: 100vh; }
 
-    .test-sets { margin-top: 1.5rem; }
-    .test-sets h3 { font-size: 0.85rem; color: #71717a; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.6rem; }
-    .sets-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .sidebar { width: 180px; flex-shrink: 0; padding-top: 0.5rem; }
+    .sidebar h3 { font-size: 0.65rem; color: #52525b; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.5rem; }
     .set-btn {
-      padding: 0.5rem 1rem; border: 1px solid #27272a; border-radius: 8px; background: #1a1b23;
-      color: #d4d4d8; cursor: pointer; font-size: 0.85rem; transition: all 0.15s;
+      display: block; width: 100%; text-align: left; margin-bottom: 0.35rem;
+      padding: 0.4rem 0.6rem; border: 1px solid #27272a; border-radius: 6px; background: #1a1b23;
+      color: #d4d4d8; cursor: pointer; font-size: 0.75rem; transition: all 0.12s;
     }
     .set-btn:hover { border-color: #3b82f6; background: #1e2030; color: #fff; }
-    .set-btn .name { font-weight: 600; }
-    .set-btn .preview { color: #71717a; font-size: 0.75rem; margin-top: 0.15rem; }
+    .set-btn .name { font-weight: 600; font-size: 0.78rem; }
+    .set-btn .preview { color: #52525b; font-size: 0.65rem; }
 
-    .form-area { margin-top: 1.5rem; }
-    label { display: block; margin-top: 1rem; font-weight: 500; font-size: 0.88rem; color: #a1a1aa; }
+    .main { flex: 1; min-width: 0; }
+    .header { margin-bottom: 0.8rem; }
+    .header h1 { font-size: 1.1rem; font-weight: 700; background: linear-gradient(135deg, #3b82f6, #a855f7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .header .sub { color: #52525b; font-size: 0.72rem; margin-top: 0.15rem; }
+    .meta-bar { display: inline-flex; align-items: center; gap: 0.4rem; margin-top: 0.4rem; padding: 0.3rem 0.5rem; background: #1a1b23; border-radius: 5px; font-size: 0.68rem; color: #71717a; }
+    .meta-bar code { background: #27272a; padding: 1px 4px; border-radius: 3px; color: #a1a1aa; font-size: 0.65rem; }
+
+    .row { display: flex; gap: 0.6rem; }
+    .row > * { flex: 1; min-width: 0; }
+
+    label { display: block; margin-top: 0.6rem; font-weight: 500; font-size: 0.75rem; color: #71717a; }
     input, select, textarea {
-      width: 100%; margin-top: 0.3rem; padding: 0.6rem 0.75rem;
-      background: #1a1b23; border: 1px solid #27272a; border-radius: 8px;
-      color: #e4e4e7; font-size: 0.95rem; transition: border-color 0.15s;
+      width: 100%; margin-top: 0.2rem; padding: 0.4rem 0.5rem;
+      background: #1a1b23; border: 1px solid #27272a; border-radius: 5px;
+      color: #e4e4e7; font-size: 0.82rem; transition: border-color 0.12s;
     }
-    input:focus, select:focus, textarea:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.2); }
-    textarea { resize: vertical; min-height: 70px; }
-    select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2371717a' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 0.75rem center; padding-right: 2rem; }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 1.5px rgba(59,130,246,0.2); }
+    textarea { resize: vertical; min-height: 48px; }
+    select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%2371717a' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 0.5rem center; padding-right: 1.5rem; }
     select option { background: #1a1b23; color: #e4e4e7; }
-    .checkbox-row { display: flex; align-items: center; gap: 0.5rem; margin-top: 1rem; }
+    .checkbox-row { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.6rem; }
     .checkbox-row input { width: auto; margin: 0; accent-color: #3b82f6; }
-    .checkbox-row label { margin: 0; font-weight: 400; font-size: 0.88rem; }
-    .field-id { font-size: 0.7rem; color: #3f3f46; margin-top: 0.1rem; font-family: monospace; }
+    .checkbox-row label { margin: 0; font-weight: 400; font-size: 0.75rem; color: #a1a1aa; }
+    .field-id { font-size: 0.58rem; color: #27272a; font-family: monospace; margin-top: 0.05rem; }
     .req { color: #ef4444; }
 
     .submit-btn {
-      margin-top: 1.5rem; width: 100%; padding: 0.75rem; border: none; border-radius: 8px;
-      background: linear-gradient(135deg, #3b82f6, #6366f1); color: #fff; font-size: 1rem;
-      font-weight: 600; cursor: pointer; transition: opacity 0.15s;
+      margin-top: 0.8rem; width: 100%; padding: 0.5rem; border: none; border-radius: 6px;
+      background: linear-gradient(135deg, #3b82f6, #6366f1); color: #fff; font-size: 0.85rem;
+      font-weight: 600; cursor: pointer; transition: opacity 0.12s;
     }
     .submit-btn:hover { opacity: 0.9; }
     .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
     #out {
-      margin-top: 1rem; white-space: pre-wrap; font-size: 0.82rem; padding: 0.75rem;
-      border-radius: 8px; font-family: monospace; display: none;
+      margin-top: 0.6rem; white-space: pre-wrap; font-size: 0.7rem; padding: 0.5rem;
+      border-radius: 6px; font-family: monospace; display: none;
     }
     #out.show { display: block; }
     .err { color: #fca5a5; background: #1c1215; border: 1px solid #7f1d1d; }
     .ok { color: #86efac; background: #0f1a14; border: 1px solid #14532d; }
+
+    @media (max-width: 640px) {
+      .layout { flex-direction: column; }
+      .sidebar { width: 100%; display: flex; gap: 0.4rem; flex-wrap: wrap; }
+      .sidebar h3 { width: 100%; }
+      .set-btn { width: auto; }
+      .row { flex-direction: column; gap: 0; }
+    }
   </style>
 </head>
 <body>
-  <div class="wrapper">
-    <h1>Medidesk Integrator</h1>
-    <div class="subtitle">Symulacja leada z Facebook Ads</div>
-    <div class="meta-bar">
-      Form ID: <code id="fid"></code>
+  <div class="layout">
+    <aside class="sidebar">
+      <h3>Dane testowe</h3>
+      <div id="sets"></div>
+    </aside>
+    <div class="main">
+      <div class="header">
+        <h1>Medidesk Integrator</h1>
+        <div class="sub">Symulacja leada z Facebook Ads</div>
+        <div class="meta-bar">Form: <code id="fid"></code></div>
+      </div>
+      <div id="form-container">Ladowanie...</div>
+      <div id="out"></div>
     </div>
-
-    <div class="test-sets">
-      <h3>Szybkie wypelnienie</h3>
-      <div class="sets-row" id="sets"></div>
-    </div>
-
-    <div class="form-area" id="form-container">Ladowanie...</div>
-    <div id="out"></div>
   </div>
 
   <script>
@@ -81,122 +94,94 @@
     document.getElementById("fid").textContent = formId;
 
     const TEST_SETS = [
-      {
-        name: "Anna Nowak",
-        preview: "Ortopeda, Krakow",
-        values: { "Imie-i-nazwisko": "Anna Nowak", "Mail": "anna.nowak@gmail.com", "Telefon": "+48 600 700 800", "Lista": "Opcja 1", "Zyczenie": "Prosze o wizyte u ortopedy w Krakowie", "zgoda": "true" }
-      },
-      {
-        name: "Marek Zielinski",
-        preview: "USG, Warszawa",
-        values: { "Imie-i-nazwisko": "Marek Zielinski", "Mail": "m.zielinski@wp.pl", "Telefon": "+48 501 234 567", "Lista": "Opcja 2", "Zyczenie": "Chcialbym umowic USG kolana na przyszly tydzien", "zgoda": "true" }
-      },
-      {
-        name: "Ewa Kowalczyk",
-        preview: "Konsultacja, Gdansk",
-        values: { "Imie-i-nazwisko": "Ewa Kowalczyk", "Mail": "ewa.k@onet.pl", "Telefon": "+48 512 345 678", "Lista": "Opcja 3", "Zyczenie": "Potrzebuje konsultacji kardiologicznej, najlepiej po 16:00", "zgoda": "true" }
-      }
+      { name: "Anna Nowak", preview: "Ortopeda", values: { "Imie-i-nazwisko": "Anna Nowak", "Mail": "anna.nowak@gmail.com", "Telefon": "+48600700800", "Lista": "Opcja 1", "Zyczenie": "Wizyta u ortopedy", "zgoda": "true" } },
+      { name: "Marek Zielinski", preview: "USG", values: { "Imie-i-nazwisko": "Marek Zielinski", "Mail": "m.zielinski@wp.pl", "Telefon": "+48501234567", "Lista": "Opcja 2", "Zyczenie": "USG kolana", "zgoda": "true" } },
+      { name: "Ewa Kowalczyk", preview: "Kardiolog", values: { "Imie-i-nazwisko": "Ewa Kowalczyk", "Mail": "ewa.k@onet.pl", "Telefon": "+48512345678", "Lista": "Opcja 3", "Zyczenie": "Konsultacja po 16:00", "zgoda": "true" } },
     ];
 
     const NICE_LABELS = {
       "Imie-i-nazwisko": "Imie i nazwisko",
-      "Mail": "Adres e-mail",
-      "Telefon": "Numer telefonu",
-      "Lista": "W czym mozemy pomoc?",
-      "Zyczenie": "Dodatkowe informacje",
-      "zgoda": "Wyrazam zgode na kontakt zwrotny",
+      "Mail": "E-mail",
+      "Telefon": "Telefon",
+      "Lista": "Temat",
+      "Zyczenie": "Uwagi",
+      "zgoda": "Zgoda na kontakt",
     };
 
+    const INLINE_FIELDS = new Set(["Mail", "Telefon"]);
+
+    const setsEl = document.getElementById("sets");
     const container = document.getElementById("form-container");
     const out = document.getElementById("out");
-    const setsEl = document.getElementById("sets");
 
-    TEST_SETS.forEach((s, i) => {
+    TEST_SETS.forEach(s => {
       const btn = document.createElement("button");
       btn.className = "set-btn";
       btn.innerHTML = "<div class='name'>" + s.name + "</div><div class='preview'>" + s.preview + "</div>";
-      btn.addEventListener("click", () => fillForm(s.values));
+      btn.addEventListener("click", () => {
+        Object.entries(s.values).forEach(([k, v]) => {
+          const el = document.querySelector("[name='" + k + "']");
+          if (!el) return;
+          if (el.type === "checkbox") el.checked = v === "true"; else el.value = v;
+        });
+        out.className = ""; out.classList.remove("show"); out.textContent = "";
+      });
       setsEl.appendChild(btn);
     });
-
-    function fillForm(values) {
-      Object.entries(values).forEach(([k, v]) => {
-        const el = document.querySelector("[name='" + k + "']");
-        if (!el) return;
-        if (el.type === "checkbox") { el.checked = v === "true"; }
-        else { el.value = v; }
-      });
-      out.className = ""; out.classList.remove("show"); out.textContent = "";
-    }
 
     fetch("/api/forms/" + formId + "/fields")
       .then(r => r.json())
       .then(data => {
         if (data.error) { container.innerHTML = "<p class='err show'>" + data.error + "</p>"; return; }
 
-        let html = "<form id='f'>";
-        data.fields.forEach(f => {
+        let html = "<form id='f'>", inRow = false;
+        data.fields.forEach((f, i) => {
           const label = NICE_LABELS[f.fieldId] || f.name;
           const req = f.required ? "<span class='req'> *</span>" : "";
+          const nextField = data.fields[i + 1];
+          const startRow = !inRow && INLINE_FIELDS.has(f.fieldId) && nextField && INLINE_FIELDS.has(nextField.fieldId);
+          const endRow = inRow && (!nextField || !INLINE_FIELDS.has(nextField?.fieldId));
+
+          if (startRow) { html += "<div class='row'>"; inRow = true; }
 
           if (f.type === "CHECKBOX") {
-            html += "<div class='checkbox-row'>"
-              + "<input type='checkbox' id='cb_" + f.fieldId + "' name='" + f.fieldId + "' value='true' />"
-              + "<label for='cb_" + f.fieldId + "'>" + label + "</label>"
-              + "</div>"
-              + "<div class='field-id'>" + f.fieldId + "</div>";
+            html += "<div class='checkbox-row'><input type='checkbox' id='cb_" + f.fieldId + "' name='" + f.fieldId + "' value='true' /><label for='cb_" + f.fieldId + "'>" + label + "</label></div>";
           } else if (f.type === "SELECT" && f.options) {
-            html += "<label>" + label + req + "</label>"
-              + "<select name='" + f.fieldId + "'>";
+            html += "<div><label>" + label + req + "</label><select name='" + f.fieldId + "'>";
             f.options.forEach(o => { html += "<option value='" + o + "'>" + o + "</option>"; });
-            html += "</select>"
-              + "<div class='field-id'>" + f.fieldId + "</div>";
+            html += "</select></div>";
           } else if (f.type === "TEXT_AREA") {
-            html += "<label>" + label + req + "</label>"
-              + "<textarea name='" + f.fieldId + "'" + (f.required ? " required" : "") + "></textarea>"
-              + "<div class='field-id'>" + f.fieldId + "</div>";
+            html += "<div><label>" + label + req + "</label><textarea name='" + f.fieldId + "'" + (f.required ? " required" : "") + "></textarea></div>";
           } else {
             const t = f.type === "EMAIL" ? "email" : f.type === "PHONE" ? "tel" : "text";
-            html += "<label>" + label + req + "</label>"
-              + "<input type='" + t + "' name='" + f.fieldId + "'" + (f.required ? " required" : "") + " />"
-              + "<div class='field-id'>" + f.fieldId + "</div>";
+            html += "<div><label>" + label + req + "</label><input type='" + t + "' name='" + f.fieldId + "'" + (f.required ? " required" : "") + " /></div>";
           }
+
+          if (endRow) { html += "</div>"; inRow = false; }
         });
-        html += "<button type='submit' class='submit-btn'>Wyslij lead do Medidesk</button></form>";
+        if (inRow) html += "</div>";
+        html += "<button type='submit' class='submit-btn'>Wyslij lead</button></form>";
         container.innerHTML = html;
 
         document.getElementById("f").addEventListener("submit", function(e) {
           e.preventDefault();
           const btn = e.target.querySelector(".submit-btn");
-          btn.disabled = true; btn.textContent = "Wysylanie...";
+          btn.disabled = true; btn.textContent = "...";
           out.textContent = ""; out.className = ""; out.classList.remove("show");
-
           const fd = new FormData(e.target);
           const body = {};
           for (const [k, v] of fd.entries()) body[k] = v;
-          data.fields.forEach(f => {
-            if (f.type === "CHECKBOX" && !fd.has(f.fieldId)) body[f.fieldId] = "false";
-          });
+          data.fields.forEach(f => { if (f.type === "CHECKBOX" && !fd.has(f.fieldId)) body[f.fieldId] = "false"; });
 
-          fetch("/api/submit/" + formId, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body),
-          })
+          fetch("/api/submit/" + formId, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
           .then(r => r.json().then(d => ({ status: r.status, data: d })))
           .then(({ status, data }) => {
             out.classList.add("show");
             out.className = status === 200 ? "ok show" : "err show";
-            out.textContent = status === 200
-              ? "Lead wyslany! Sprawdz panel Medidesk.\n" + JSON.stringify(data, null, 2)
-              : "Blad HTTP " + status + "\n" + JSON.stringify(data, null, 2);
-            btn.disabled = false; btn.textContent = "Wyslij lead do Medidesk";
+            out.textContent = status === 200 ? "OK — sprawdz Medidesk" : "Blad " + status + "\n" + JSON.stringify(data, null, 2);
+            btn.disabled = false; btn.textContent = "Wyslij lead";
           })
-          .catch(err => {
-            out.classList.add("show"); out.className = "err show";
-            out.textContent = "Blad: " + err;
-            btn.disabled = false; btn.textContent = "Wyslij lead do Medidesk";
-          });
+          .catch(err => { out.classList.add("show"); out.className = "err show"; out.textContent = "" + err; btn.disabled = false; btn.textContent = "Wyslij lead"; });
         });
       })
       .catch(err => { container.innerHTML = "<p class='err'>" + err + "</p>"; });
