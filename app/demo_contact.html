@@ -7,9 +7,9 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: system-ui, -apple-system, sans-serif; background: #0f1117; color: #e4e4e7; min-height: 100vh; font-size: 13px; }
-    .layout { display: flex; max-width: 64rem; margin: 0 auto; padding: 1.2rem 1rem; gap: 1.2rem; min-height: 100vh; }
+    .layout { display: flex; max-width: 36rem; margin: 0 auto; padding: 1.2rem 1rem; gap: 1rem; min-height: 100vh; }
 
-    .sidebar { width: 180px; flex-shrink: 0; padding-top: 0.5rem; }
+    .sidebar { width: 130px; flex-shrink: 0; padding-top: 0.5rem; }
     .sidebar h3 { font-size: 0.65rem; color: #52525b; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.5rem; }
     .set-btn {
       display: block; width: 100%; text-align: left; margin-bottom: 0.35rem;
@@ -103,12 +103,14 @@
       "Imie-i-nazwisko": "Imie i nazwisko",
       "Mail": "E-mail",
       "Telefon": "Telefon",
-      "Lista": "Temat",
-      "Zyczenie": "Uwagi",
+      "Lista": "Lista opcji",
+      "Zyczenie": "Zapytanie",
       "zgoda": "Zgoda na kontakt",
     };
 
     const INLINE_FIELDS = new Set(["Mail", "Telefon"]);
+
+    const FIELD_ORDER = ["Imie-i-nazwisko", "Mail", "Telefon", "Lista", "Zyczenie", "zgoda"];
 
     const setsEl = document.getElementById("sets");
     const container = document.getElementById("form-container");
@@ -134,11 +136,16 @@
       .then(data => {
         if (data.error) { container.innerHTML = "<p class='err show'>" + data.error + "</p>"; return; }
 
+        const sorted = data.fields.slice().sort((a, b) => {
+          const ia = FIELD_ORDER.indexOf(a.fieldId), ib = FIELD_ORDER.indexOf(b.fieldId);
+          return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
+        });
+
         let html = "<form id='f'>", inRow = false;
-        data.fields.forEach((f, i) => {
+        sorted.forEach((f, i) => {
           const label = NICE_LABELS[f.fieldId] || f.name;
           const req = f.required ? "<span class='req'> *</span>" : "";
-          const nextField = data.fields[i + 1];
+          const nextField = sorted[i + 1];
           const startRow = !inRow && INLINE_FIELDS.has(f.fieldId) && nextField && INLINE_FIELDS.has(nextField.fieldId);
           const endRow = inRow && (!nextField || !INLINE_FIELDS.has(nextField?.fieldId));
 
