@@ -3,81 +3,80 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Test – Medidesk Integrator</title>
-  <script src="https://www.google.com/recaptcha/api.js?render=__RECAPTCHA_SITE_KEY__"></script>
+  <title>Test – Medidesk Integrator v2</title>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 32rem; margin: 2rem auto; padding: 0 1rem; }
+    body { font-family: system-ui, sans-serif; max-width: 36rem; margin: 2rem auto; padding: 0 1rem; }
+    h1 { font-size: 1.4rem; }
     label { display: block; margin-top: 0.75rem; font-weight: 600; }
     input, select, textarea { width: 100%; box-sizing: border-box; margin-top: 0.25rem; padding: 0.5rem; }
-    button { margin-top: 1rem; padding: 0.6rem 1rem; cursor: pointer; }
+    button { margin-top: 1rem; padding: 0.6rem 1.2rem; cursor: pointer; font-size: 1rem; }
     #out { margin-top: 1rem; white-space: pre-wrap; font-size: 0.9rem; }
-    .err { color: #b00; }
-    .ok { color: #060; }
+    .err { color: #b00; } .ok { color: #060; }
+    .info { background: #f0f4ff; padding: 0.75rem; border-radius: 4px; font-size: 0.85rem; margin-bottom: 1rem; }
+    code { background: #eee; padding: 2px 4px; border-radius: 3px; }
   </style>
 </head>
 <body>
-  <h1>Test integracji Medidesk</h1>
-  <p>Token reCAPTCHA jest pobierany automatycznie po kliknięciu „Wyślij” – nic nie kopiujesz.</p>
-  <form id="f">
-    <label>Imię i nazwisko <input name="fullName" required value="Jan Kowalski" /></label>
-    <label>Telefon <input name="phone" required value="+48500600700" /></label>
-    <label>E-mail <input name="email" type="email" value="jan@example.com" /></label>
-    <label>W czym możemy pomóc?
-      <select name="topic">
-        <option>Umówienie wizyty</option>
-        <option>Umówienie badań - USG</option>
-        <option>Odwołanie wizyty</option>
-        <option>Zmiana terminu</option>
-        <option selected>Inna</option>
-      </select>
-    </label>
-    <label>Dodatkowa informacja <textarea name="message" rows="4" required>Treść testowa z demo strony.</textarea></label>
-    <label><input type="checkbox" name="consent" checked /> Zgoda na kontakt zwrotny</label>
-    <button type="submit">Wyślij do Medidesk (przez integrator)</button>
-  </form>
+  <h1>Medidesk Integrator — test formularza</h1>
+  <div class="info">
+    <strong>Form ID:</strong> <code id="fid">d908ee01-0b7d-44a0-a494-a707ab5a55ef</code><br>
+    Pola ladowane dynamicznie z Medidesk. Bez captchy (urlencoded).
+  </div>
+  <div id="form-container">Ladowanie pol formularza...</div>
   <div id="out"></div>
+
   <script>
-    const SITE_KEY = "__RECAPTCHA_SITE_KEY__";
-    const API = "/api/medidesk/contact";
+    const DEFAULT_FORM_ID = "d908ee01-0b7d-44a0-a494-a707ab5a55ef";
+    const formId = new URLSearchParams(location.search).get("form_id") || DEFAULT_FORM_ID;
+    document.getElementById("fid").textContent = formId;
+
+    const container = document.getElementById("form-container");
     const out = document.getElementById("out");
-    document.getElementById("f").addEventListener("submit", function (e) {
-      e.preventDefault();
-      out.textContent = "Pobieranie tokenu reCAPTCHA…";
-      out.className = "";
-      const fd = new FormData(e.target);
-      const consent = fd.get("consent") === "on";
-      const bodyBase = {
-        fullName: fd.get("fullName"),
-        phone: fd.get("phone"),
-        email: fd.get("email") || null,
-        topic: fd.get("topic"),
-        message: fd.get("message"),
-        consent: consent,
-      };
-      grecaptcha.ready(function () {
-        grecaptcha.execute(SITE_KEY, { action: "submit" }).then(function (token) {
-          out.textContent = "Wysyłanie…";
-          return fetch(API, {
+
+    fetch("/api/forms/" + formId + "/fields")
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) { container.innerHTML = "<p class='err'>" + data.error + "</p>"; return; }
+        let html = "<form id='f'>";
+        data.fields.forEach(f => {
+          if (f.type === "CHECKBOX") {
+            html += "<label><input type='checkbox' name='" + f.fieldId + "' value='true' " + (f.required ? "required" : "") + " /> " + f.name + "</label>";
+          } else if (f.type === "SELECT" && f.options) {
+            html += "<label>" + f.name + "<select name='" + f.fieldId + "'>";
+            f.options.forEach(o => { html += "<option value='" + o + "'>" + o + "</option>"; });
+            html += "</select></label>";
+          } else {
+            const inputType = f.type === "EMAIL" ? "email" : f.type === "PHONE" ? "tel" : "text";
+            html += "<label>" + f.name + " <input type='" + inputType + "' name='" + f.fieldId + "' " + (f.required ? "required" : "") + " /></label>";
+          }
+        });
+        html += "<button type='submit'>Wyslij do Medidesk</button></form>";
+        container.innerHTML = html;
+
+        document.getElementById("f").addEventListener("submit", function(e) {
+          e.preventDefault();
+          out.textContent = "Wysylanie..."; out.className = "";
+          const fd = new FormData(e.target);
+          const body = {};
+          for (const [k, v] of fd.entries()) body[k] = v;
+          data.fields.forEach(f => {
+            if (f.type === "CHECKBOX" && !fd.has(f.fieldId)) body[f.fieldId] = "false";
+          });
+
+          fetch("/api/submit/" + formId, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(Object.assign({ captchaToken: token }, bodyBase)),
-          });
-        }).then(function (res) {
-          return res.json().then(function (data) {
-            if (res.ok) {
-              out.className = "ok";
-              out.textContent = "OK (" + res.status + "): " + JSON.stringify(data, null, 2);
-            } else {
-              out.className = "err";
-              out.textContent = "Błąd HTTP " + res.status + ":\n" + JSON.stringify(data, null, 2);
-            }
-          });
-        }).catch(function (err) {
-          out.className = "err";
-          out.textContent = "Błąd: " + err;
+            body: JSON.stringify(body),
+          })
+          .then(r => r.json().then(d => ({ status: r.status, data: d })))
+          .then(({ status, data }) => {
+            out.className = status === 200 ? "ok" : "err";
+            out.textContent = "HTTP " + status + ":\n" + JSON.stringify(data, null, 2);
+          })
+          .catch(err => { out.className = "err"; out.textContent = "Blad: " + err; });
         });
-      });
-    });
+      })
+      .catch(err => { container.innerHTML = "<p class='err'>Blad ladowania: " + err + "</p>"; });
   </script>
 </body>
 </html>

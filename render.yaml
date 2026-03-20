@@ -7,11 +7,9 @@ services:
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /docs
+    healthCheckPath: /
     envVars:
       - key: PYTHON_VERSION
         value: "3.12.0"
       - key: MEDIDESK_DEMO_PAGE_ENABLED
         value: "true"
-      - key: MEDIDESK_AUTO_PLACEHOLDER_PHOTO
-        value: "false"

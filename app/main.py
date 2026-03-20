@@ -2,93 +2,23 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any
 
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.mapper import build_medidesk_payload
 from app.medidesk_client import (
     MedideskResult,
-    submit_form,
-    upload_attachment,
-    get_placeholder_attachment_id,
-    verify_recaptcha_google_token,
-    MAX_ATTACHMENT_SIZE,
-    ALLOWED_ATTACHMENT_TYPES,
-)
-from app.schemas import (
-    ContactRequest,
-    SuccessResponse,
-    ValidationErrorResponse,
-    CaptchaErrorResponse,
-    FieldError,
-    UpstreamErrorResponse,
+    fetch_form_fields,
+    submit_form_urlencoded,
 )
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Medidesk Integrator", version="1.0.0")
-
-
-@app.get("/")
-async def root():
-    """Render i przeglądarki często odpytują GET / – bez tej trasy byłby 404."""
-    return {
-        "service": "Medidesk Integrator",
-        "docs": "/docs",
-        "demo_contact": "/demo/contact",
-        "api_contact": "/api/medidesk/contact",
-    }
-
-
-async def _maybe_verify_recaptcha_google(req: ContactRequest) -> JSONResponse | None:
-    """Jeśli ustawiono MEDIDESK_RECAPTCHA_SECRET – sprawdź token u Google przed Medidesk."""
-    if not settings.recaptcha_secret:
-        return None
-    ok, gdata = await verify_recaptcha_google_token(
-        req.captcha_token, settings.recaptcha_secret
-    )
-    if ok:
-        return None
-    safe = {
-        k: gdata.get(k)
-        for k in ("success", "hostname", "score", "action", "challenge_ts")
-        if k in gdata
-    }
-    if "error-codes" in gdata:
-        safe["errorCodes"] = gdata["error-codes"]
-    logger.info("Google siteverify FAILED: %s", safe)
-    return JSONResponse(
-        status_code=400,
-        content={
-            "status": "recaptcha_google_failed",
-            "message": (
-                "Token odrzucony przez Google (siteverify). "
-                "Sprawdź domenę w reCAPTCHA Admin (np. md-integrator-v1.onrender.com) "
-                "i czy MEDIDESK_RECAPTCHA_SECRET pasuje do tego samego klucza co site key."
-            ),
-            "google": safe,
-        },
-    )
-
-
-def _upstream_error_response(result: MedideskResult) -> JSONResponse:
-    """502 z opcjonalnymi szczegółami, gdy MEDIDESK_DEBUG_UPSTREAM=true."""
-    kw: dict = {
-        "message": f"Medidesk returned HTTP {result.status_code}",
-    }
-    if settings.debug_upstream:
-        kw["upstream_status"] = result.status_code
-        if result.body is not None:
-            kw["upstream_body"] = result.body
-        elif result.raw_text:
-            kw["upstream_preview"] = result.raw_text[:2000]
-    body = UpstreamErrorResponse(**kw).model_dump(by_alias=True, exclude_none=True)
-    status = result.status_code if result.status_code in (502, 504) else 502
-    return JSONResponse(status_code=status, content=body)
+app = FastAPI(title="Medidesk Integrator", version="2.0.0")
 
 if settings.cors_origins_list:
     app.add_middleware(
@@ -100,162 +30,105 @@ if settings.cors_origins_list:
     )
 
 
+@app.get("/")
+async def root():
+    return {
+        "service": "Medidesk Integrator",
+        "version": "2.0.0",
+        "docs": "/docs",
+        "usage": "POST /api/submit/{medidesk_form_id} with JSON body of field values",
+    }
+
+
+@app.get("/api/forms/{form_id}/fields")
+async def get_form_fields(form_id: str):
+    """Podgląd pól formularza Medidesk — pomocne przy tworzeniu mapowania."""
+    fields = await fetch_form_fields(form_id)
+    if not fields:
+        return JSONResponse(
+            status_code=404,
+            content={"error": f"Form {form_id} not found or has no fields"},
+        )
+    return {
+        "form_id": form_id,
+        "fields": [
+            {
+                "fieldId": f.field_id,
+                "type": f.field_type,
+                "required": f.required,
+                "name": f.name,
+                "options": f.options,
+            }
+            for f in fields
+        ],
+    }
+
+
+@app.post("/api/submit/{form_id}")
+async def submit_to_medidesk(form_id: str, request: Request):
+    """Generyczny endpoint: przyjmuje JSON z polami, wysyła urlencoded do Medidesk.
+
+    Body JSON: klucze = fieldId z Medidesk, wartości = stringi.
+    Opcjonalnie: siteDomain, siteUrl (nadpisują domyślne).
+    """
+    try:
+        body: dict[str, Any] = await request.json()
+    except Exception:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Invalid JSON body"},
+        )
+
+    site_domain = body.pop("siteDomain", None)
+    site_url = body.pop("siteUrl", None)
+
+    fields_values: dict[str, str] = {
+        k: str(v) for k, v in body.items() if v is not None
+    }
+
+    if not fields_values:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "No field values provided"},
+        )
+
+    result = await submit_form_urlencoded(
+        form_id, fields_values, site_domain, site_url
+    )
+
+    if result.success:
+        return {"status": "ok", "form_id": form_id}
+
+    if result.status_code == 400 and result.body:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "status": "validation_error",
+                "form_id": form_id,
+                "errors": result.body,
+            },
+        )
+
+    content: dict[str, Any] = {
+        "status": "upstream_error",
+        "message": f"Medidesk returned HTTP {result.status_code}",
+        "form_id": form_id,
+    }
+    if settings.debug_upstream:
+        content["upstream_body"] = result.body
+        content["upstream_preview"] = (result.raw_text or "")[:2000]
+
+    status = result.status_code if result.status_code in (502, 504) else 502
+    return JSONResponse(status_code=status, content=content)
+
+
 @app.get("/demo/contact", response_class=HTMLResponse, include_in_schema=False)
 async def demo_contact_page():
-    """Strona testowa: reCAPTCHA + POST na /api/medidesk/contact bez ręcznego kopiowania tokenu.
-
-    Włącz na Renderze: MEDIDESK_DEMO_PAGE_ENABLED=true
-    """
     if not settings.demo_page_enabled:
         return HTMLResponse(
-            "<p>Strona demo wyłączona. Ustaw <code>MEDIDESK_DEMO_PAGE_ENABLED=true</code>.</p>",
+            "<p>Demo disabled. Set <code>MEDIDESK_DEMO_PAGE_ENABLED=true</code>.</p>",
             status_code=404,
         )
     path = Path(__file__).resolve().parent / "demo_contact.html"
     html = path.read_text(encoding="utf-8")
-    html = html.replace("__RECAPTCHA_SITE_KEY__", settings.recaptcha_site_key)
     return HTMLResponse(content=html)
-
-
-@app.post(
-    "/api/medidesk/contact",
-    response_model=SuccessResponse,
-    responses={
-        400: {"model": ValidationErrorResponse},
-        401: {"model": CaptchaErrorResponse},
-        502: {"model": UpstreamErrorResponse},
-        504: {"model": UpstreamErrorResponse},
-    },
-)
-async def submit_contact(req: ContactRequest):
-    """Accept contact data and forward it to the Medidesk forms API."""
-
-    early = await _maybe_verify_recaptcha_google(req)
-    if early is not None:
-        return early
-
-    attachment_ids: list[str] | None = None
-    if settings.auto_placeholder_photo:
-        pid = await get_placeholder_attachment_id(req.captcha_token)
-        if pid:
-            attachment_ids = [pid]
-        else:
-            logger.warning(
-                "Upload placeholder PNG failed; wysyłam bez załącznika (możliwy błąd 500 po stronie Medidesk)"
-            )
-
-    payload = build_medidesk_payload(req, attachment_ids=attachment_ids)
-    result = await submit_form(payload, req.captcha_token)
-
-    if result.success:
-        return SuccessResponse()
-
-    if result.status_code == 401:
-        return JSONResponse(
-            status_code=401,
-            content=CaptchaErrorResponse().model_dump(),
-        )
-
-    if result.status_code == 400 and result.body:
-        resp = ValidationErrorResponse(
-            global_errors=[
-                FieldError(**e) for e in result.body.get("globalErrors", [])
-            ],
-            field_errors={
-                field: [FieldError(**e) for e in errors]
-                for field, errors in result.body.get("fieldErrors", {}).items()
-            },
-        )
-        return JSONResponse(status_code=400, content=resp.model_dump(by_alias=True))
-
-    return _upstream_error_response(result)
-
-
-@app.post(
-    "/api/medidesk/contact-with-attachment",
-    response_model=SuccessResponse,
-    responses={
-        400: {"model": ValidationErrorResponse},
-        401: {"model": CaptchaErrorResponse},
-        502: {"model": UpstreamErrorResponse},
-    },
-)
-async def submit_contact_with_attachment(
-    data: str = Form(..., description="JSON string matching ContactRequest schema"),
-    file: UploadFile = File(...),
-):
-    """Accept contact data + file attachment and forward to Medidesk.
-
-    The contact data is sent as a JSON string in the `data` form field
-    because multipart/form-data cannot carry nested JSON natively.
-    """
-
-    import json
-    from pydantic import ValidationError
-
-    try:
-        req = ContactRequest.model_validate_json(data)
-    except ValidationError as exc:
-        return JSONResponse(status_code=422, content=exc.errors())
-
-    early = await _maybe_verify_recaptcha_google(req)
-    if early is not None:
-        return early
-
-    if file.content_type and file.content_type not in ALLOWED_ATTACHMENT_TYPES:
-        return JSONResponse(
-            status_code=400,
-            content=ValidationErrorResponse(
-                global_errors=[FieldError(code="invalid_file_type")],
-            ).model_dump(by_alias=True),
-        )
-
-    file_bytes = await file.read()
-    if len(file_bytes) > MAX_ATTACHMENT_SIZE:
-        return JSONResponse(
-            status_code=400,
-            content=ValidationErrorResponse(
-                global_errors=[FieldError(code="file_too_large")],
-            ).model_dump(by_alias=True),
-        )
-
-    attachment_id = await upload_attachment(
-        file_bytes, file.filename or "attachment", captcha_token=req.captcha_token
-    )
-    if not attachment_id:
-        attachment_id = await upload_attachment(
-            file_bytes, file.filename or "attachment", captcha_token=None
-        )
-    if not attachment_id:
-        return JSONResponse(
-            status_code=502,
-            content=UpstreamErrorResponse(
-                message="Failed to upload attachment to Medidesk"
-            ).model_dump(by_alias=True, exclude_none=True),
-        )
-
-    payload = build_medidesk_payload(req, attachment_ids=[attachment_id])
-    result = await submit_form(payload, req.captcha_token)
-
-    if result.success:
-        return SuccessResponse()
-
-    if result.status_code == 401:
-        return JSONResponse(
-            status_code=401,
-            content=CaptchaErrorResponse().model_dump(),
-        )
-
-    if result.status_code == 400 and result.body:
-        resp = ValidationErrorResponse(
-            global_errors=[
-                FieldError(**e) for e in result.body.get("globalErrors", [])
-            ],
-            field_errors={
-                field: [FieldError(**e) for e in errors]
-                for field, errors in result.body.get("fieldErrors", {}).items()
-            },
-        )
-        return JSONResponse(status_code=400, content=resp.model_dump(by_alias=True))
-
-    return _upstream_error_response(result)
