@@ -816,7 +816,7 @@
         <tr>
           <td style="font-family:monospace;font-size:0.72rem;">${l.lead_id.substring(0, 18)}</td>
           <td><span class="badge badge-${l.status}">${l.status === 'sent' ? '✓ wysłano' : l.status === 'failed' ? '✗ błąd' : '⟳ odebrano'}</span></td>
-          <td>${l.mapped_fields_count} pól</td>
+          <td>${l.mapped_fields_count} ${polPole(l.mapped_fields_count)}</td>
           <td>${timeAgo(l.timestamp)}</td>
           <td style="font-size:0.7rem;color:#52525b;">${l.integration_id?.substring(0, 8) || '—'}…</td>
         </tr>
@@ -898,7 +898,7 @@
             <span><strong>${stats.sent}</strong> wysłanych</span>
             <span><strong>${stats.failed}</strong> błędów</span>
             <span><strong>${stats.success_rate}%</strong> sukcesu</span>
-            <span><strong>${i.mappings_count}</strong> zmapowanych pól</span>
+            <span><strong>${i.mappings_count}</strong> zmapowanych ${polPole(i.mappings_count)}</span>
           </div>
 
           <div class="int-card-actions">
@@ -1036,7 +1036,7 @@
             <tr class="lead-row" onclick="toggleLeadDetail('${l.lead_id}')">
               <td style="font-family:monospace;font-size:0.72rem;">${l.lead_id.substring(0, 20)}</td>
               <td>${statusBadge}</td>
-              <td>${l.mapped_fields_count || 0} pól</td>
+              <td>${l.mapped_fields_count || 0} ${polPole(l.mapped_fields_count || 0)}</td>
               <td>${timeAgo(l.timestamp)}</td>
               <td style="font-size:0.72rem;color:${l.status === 'failed' ? '#f87171' : '#52525b'};max-width:150px;overflow:hidden;text-overflow:ellipsis;">${errorText}</td>
               <td onclick="event.stopPropagation()">${retryBtn}</td>
@@ -1114,6 +1114,12 @@
       if (diff < 3600) return Math.floor(diff / 60) + ' min temu';
       if (diff < 86400) return Math.floor(diff / 3600) + 'h temu';
       return Math.floor(diff / 86400) + 'd temu';
+    }
+
+    function polPole(n) {
+      if (n === 1) return 'pole';
+      if (n >= 2 && n <= 4) return 'pola';
+      return 'pól';
     }
 
     function showToast(msg, type) {
