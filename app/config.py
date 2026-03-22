@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     fb_session_secret: str = "medidesk-session-secret-change-me-2026"
     admin_password: str = "medidesk-admin-2026"
 
+    # Encryption (Fernet) — generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    encryption_key: str = ""
+
     model_config = {"env_prefix": "MEDIDESK_"}
 
     @property

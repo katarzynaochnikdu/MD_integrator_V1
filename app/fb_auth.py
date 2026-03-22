@@ -9,7 +9,7 @@ import time
 import base64
 from typing import Any
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from app.config import settings
@@ -87,6 +87,54 @@ def get_current_user(request: Request) -> dict[str, Any] | None:
     if not session:
         return None
     return session.get("user")
+
+
+def get_session_role(request: Request) -> str | None:
+    """Get current session role ('admin' or 'user'). None if not logged in."""
+    session = get_session_from_cookie(request)
+    if not session:
+        return None
+    return session.get("role")
+
+
+# ─── Auth dependencies for FastAPI ────────────────────────────────
+
+
+async def require_auth(request: Request) -> dict[str, Any]:
+    """FastAPI dependency: require a valid session cookie."""
+    session = get_session_from_cookie(request)
+    if not session or "user" not in session:
+        raise HTTPException(status_code=401, detail="Nie zalogowany")
+    return session
+
+
+async def require_admin(request: Request) -> dict[str, Any]:
+    """FastAPI dependency: require admin role."""
+    session = await require_auth(request)
+    if session.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Wymagane uprawnienia administratora")
+    return session
+
+
+# ─── Rate limiting (in-memory) ────────────────────────────────────
+
+_login_attempts: dict[str, list[float]] = {}  # ip -> [timestamp, ...]
+RATE_LIMIT_WINDOW = 60  # seconds
+RATE_LIMIT_MAX = 5  # max attempts per window
+
+
+def _check_rate_limit(ip: str) -> bool:
+    """Returns True if request is allowed, False if rate-limited."""
+    import time
+    now = time.time()
+    attempts = _login_attempts.get(ip, [])
+    # Clean old attempts
+    attempts = [t for t in attempts if now - t < RATE_LIMIT_WINDOW]
+    _login_attempts[ip] = attempts
+    if len(attempts) >= RATE_LIMIT_MAX:
+        return False
+    attempts.append(now)
+    return True
 
 
 # Also keep in-memory sessions for backward compatibility with setup wizard
@@ -201,7 +249,14 @@ async def logout(request: Request):
 
 @router.post("/admin/login")
 async def admin_login(request: Request):
-    """Authenticate admin with password."""
+    """Authenticate admin with password (rate-limited)."""
+    client_ip = request.client.host if request.client else "unknown"
+    if not _check_rate_limit(client_ip):
+        return JSONResponse(
+            status_code=429,
+            content={"error": "Zbyt wiele prób logowania. Spróbuj za minutę."},
+        )
+
     try:
         body = await request.json()
     except Exception:

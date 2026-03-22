@@ -14,6 +14,42 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 
+# ─── Fernet encryption for tokens ─────────────────────────────────
+
+_fernet = None
+
+
+def _get_fernet():
+    global _fernet
+    if _fernet is not None:
+        return _fernet
+    if not settings.encryption_key:
+        return None
+    from cryptography.fernet import Fernet
+    _fernet = Fernet(settings.encryption_key.encode())
+    return _fernet
+
+
+def _encrypt_token(plaintext: str) -> str:
+    """Encrypt a token for at-rest storage."""
+    f = _get_fernet()
+    if not f:
+        return plaintext  # dev mode: no encryption
+    return f.encrypt(plaintext.encode()).decode()
+
+
+def _decrypt_token(ciphertext: str) -> str:
+    """Decrypt a stored token."""
+    f = _get_fernet()
+    if not f:
+        return ciphertext  # dev mode: no encryption
+    try:
+        return f.decrypt(ciphertext.encode()).decode()
+    except Exception:
+        logger.warning("Failed to decrypt token — returning as-is (may be unencrypted)")
+        return ciphertext
+
+
 @dataclass
 class FieldMapping:
     fb_field: str
@@ -65,7 +101,7 @@ def _dict_to_integration(d: dict[str, Any]) -> Integration:
         id=d["id"],
         fb_page_id=d["fb_page_id"],
         fb_page_name=d["fb_page_name"],
-        fb_page_token=d["fb_page_token"],
+        fb_page_token=_decrypt_token(d["fb_page_token"]),
         fb_form_id=d["fb_form_id"],
         fb_form_name=d["fb_form_name"],
         fb_form_questions=d.get("fb_form_questions", []),
@@ -97,7 +133,7 @@ def create_integration(
         id=str(uuid.uuid4()),
         fb_page_id=fb_page_id,
         fb_page_name=fb_page_name,
-        fb_page_token=fb_page_token,
+        fb_page_token=fb_page_token,  # stored in memory as plaintext
         fb_form_id=fb_form_id,
         fb_form_name=fb_form_name,
         fb_form_questions=fb_form_questions,
@@ -109,8 +145,11 @@ def create_integration(
         created_at=now,
         updated_at=now,
     )
+    # Encrypt token before saving to disk
+    data = asdict(integration)
+    data["fb_page_token"] = _encrypt_token(fb_page_token)
     all_data = _load_all()
-    all_data.append(asdict(integration))
+    all_data.append(data)
     _save_all(all_data)
     logger.info("Created integration %s (FB form %s → MD form %s)", integration.id, fb_form_id, medidesk_form_id)
     return integration
@@ -136,8 +175,25 @@ def find_by_fb_form(fb_form_id: str) -> Integration | None:
 
 
 def find_by_fb_page(fb_page_id: str) -> Integration | None:
-    """Find active integration by Facebook page ID (used by webhook)."""
+    """Find active integration by Facebook page ID (first match)."""
     for d in _load_all():
+        if d.get("fb_page_id") == fb_page_id and d.get("active"):
+            return _dict_to_integration(d)
+    return None
+
+
+def find_by_fb_page_and_form(fb_page_id: str, fb_form_id: str | None = None) -> Integration | None:
+    """Find active integration by page + form ID. Falls back to page-only if no form match."""
+    all_data = _load_all()
+    # First: exact match on page + form
+    if fb_form_id:
+        for d in all_data:
+            if (d.get("fb_page_id") == fb_page_id
+                    and d.get("fb_form_id") == fb_form_id
+                    and d.get("active")):
+                return _dict_to_integration(d)
+    # Fallback: match on page only
+    for d in all_data:
         if d.get("fb_page_id") == fb_page_id and d.get("active"):
             return _dict_to_integration(d)
     return None

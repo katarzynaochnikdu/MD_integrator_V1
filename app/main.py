@@ -5,12 +5,12 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.fb_auth import router as fb_auth_router
+from app.fb_auth import require_admin, require_auth, router as fb_auth_router
 from app.fb_client import subscribe_page_to_webhooks
 from app.integrations_store import (
     FieldMapping,
@@ -164,7 +164,7 @@ async def suggest_field_mapping(request: Request):
 
 
 @app.post("/api/integrations")
-async def create_new_integration(request: Request):
+async def create_new_integration(request: Request, _session=Depends(require_auth)):
     """Create a new FB→Medidesk integration with field mappings."""
     body = await request.json()
 
@@ -202,13 +202,14 @@ async def create_new_integration(request: Request):
 
 
 @app.get("/api/integrations")
-async def list_integrations():
-    """List all integrations."""
+async def list_integrations(_session=Depends(require_auth)):
+    """List all integrations (tokens hidden)."""
     integrations = get_all_integrations()
     return {
         "integrations": [
             {
                 "id": i.id,
+                "fb_page_id": i.fb_page_id,
                 "fb_page_name": i.fb_page_name,
                 "fb_form_name": i.fb_form_name,
                 "medidesk_form_id": i.medidesk_form_id,
@@ -223,16 +224,18 @@ async def list_integrations():
 
 
 @app.get("/api/integrations/{integration_id}")
-async def get_integration_detail(integration_id: str):
-    """Get details of a specific integration."""
+async def get_integration_detail(integration_id: str, _session=Depends(require_auth)):
+    """Get details of a specific integration (token hidden)."""
     integration = get_integration(integration_id)
     if not integration:
         return JSONResponse(status_code=404, content={"error": "Integration not found"})
-    return asdict(integration)
+    data = asdict(integration)
+    data.pop("fb_page_token", None)  # Never expose token via API
+    return data
 
 
 @app.post("/api/integrations/{integration_id}/activate")
-async def activate_integration(integration_id: str):
+async def activate_integration(integration_id: str, _session=Depends(require_auth)):
     """Activate an integration and subscribe page to webhooks."""
     integration = get_integration(integration_id)
     if not integration:
@@ -254,7 +257,7 @@ async def activate_integration(integration_id: str):
 
 
 @app.post("/api/integrations/{integration_id}/deactivate")
-async def deactivate_integration(integration_id: str):
+async def deactivate_integration(integration_id: str, _session=Depends(require_auth)):
     """Deactivate an integration."""
     integration = get_integration(integration_id)
     if not integration:
@@ -264,7 +267,7 @@ async def deactivate_integration(integration_id: str):
 
 
 @app.delete("/api/integrations/{integration_id}")
-async def remove_integration(integration_id: str):
+async def remove_integration(integration_id: str, _session=Depends(require_admin)):
     """Delete an integration."""
     if delete_integration(integration_id):
         return {"status": "deleted"}
@@ -275,7 +278,7 @@ async def remove_integration(integration_id: str):
 
 
 @app.get("/api/stats")
-async def global_stats():
+async def global_stats(_session=Depends(require_auth)):
     """Global lead processing stats."""
     from app.lead_tracker import get_global_stats, get_recent_leads
     from app.integrations_store import get_all_integrations
@@ -289,7 +292,7 @@ async def global_stats():
 
 
 @app.get("/api/stats/{integration_id}")
-async def integration_stats(integration_id: str):
+async def integration_stats(integration_id: str, _session=Depends(require_auth)):
     """Stats for a specific integration."""
     from app.lead_tracker import get_stats, get_recent_leads
 
@@ -310,14 +313,14 @@ async def integration_stats(integration_id: str):
 
 
 @app.get("/api/leads/failed")
-async def list_failed_leads():
+async def list_failed_leads(_session=Depends(require_auth)):
     """Get all failed leads (not yet successfully retried)."""
     from app.lead_tracker import get_failed_leads
     return {"failed_leads": get_failed_leads()}
 
 
 @app.get("/api/leads/{lead_id}")
-async def get_lead_detail(lead_id: str):
+async def get_lead_detail(lead_id: str, _session=Depends(require_auth)):
     """Get full details of a lead event (including raw data)."""
     from app.lead_tracker import get_lead_event
     event = get_lead_event(lead_id)
@@ -327,7 +330,7 @@ async def get_lead_detail(lead_id: str):
 
 
 @app.post("/api/leads/{lead_id}/retry")
-async def retry_lead(lead_id: str):
+async def retry_lead(lead_id: str, _session=Depends(require_auth)):
     """Retry sending a failed lead to Medidesk using saved data."""
     from app.lead_tracker import get_lead_event, log_lead_event, mark_retried
 

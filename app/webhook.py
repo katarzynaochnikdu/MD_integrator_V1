@@ -1,6 +1,8 @@
 """Facebook Webhook handler for Lead Ads with full payload tracking."""
 from __future__ import annotations
 
+import hashlib
+import hmac
 import logging
 from typing import Any
 
@@ -9,11 +11,28 @@ from fastapi.responses import PlainTextResponse, JSONResponse
 
 from app.config import settings
 from app.fb_client import get_lead_data
-from app.integrations_store import find_by_fb_page
+from app.integrations_store import find_by_fb_page_and_form
 from app.lead_tracker import log_lead_event
 from app.medidesk_client import submit_form_urlencoded
 
 logger = logging.getLogger(__name__)
+
+
+def _verify_signature(payload: bytes, signature_header: str | None) -> bool:
+    """Verify X-Hub-Signature-256 from Facebook using app_secret."""
+    if not settings.fb_app_secret:
+        logger.warning("fb_app_secret not set — skipping webhook signature check")
+        return True  # allow in dev
+    if not signature_header:
+        return False
+    if not signature_header.startswith("sha256="):
+        return False
+    expected = hmac.new(
+        settings.fb_app_secret.encode("utf-8"),
+        payload,
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(expected, signature_header[7:])
 
 router = APIRouter(prefix="/webhook", tags=["Webhook"])
 
@@ -36,6 +55,13 @@ async def verify_webhook(
 @router.post("/facebook")
 async def handle_webhook(request: Request):
     """Handle incoming Facebook webhook events (leadgen)."""
+    # Verify webhook signature (HMAC-SHA256)
+    raw_body = await request.body()
+    signature = request.headers.get("X-Hub-Signature-256")
+    if not _verify_signature(raw_body, signature):
+        logger.warning("Webhook signature verification FAILED")
+        return JSONResponse(status_code=403, content={"error": "Invalid signature"})
+
     try:
         body: dict[str, Any] = await request.json()
     except Exception:
@@ -70,8 +96,8 @@ async def handle_webhook(request: Request):
                 lead_id, form_id, page_id,
             )
 
-            # Find the integration for this page
-            integration = find_by_fb_page(page_id)
+            # Find the integration for this page + form
+            integration = find_by_fb_page_and_form(page_id, form_id)
             if not integration:
                 logger.warning("No active integration found for page %s", page_id)
                 continue

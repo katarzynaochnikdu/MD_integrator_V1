@@ -1,0 +1,86 @@
+[
+  {
+    "integration_id": "int-1",
+    "lead_id": "lead_123",
+    "timestamp": "2026-03-22T10:10:53.235513+00:00",
+    "status": "received",
+    "mapped_fields_count": 0,
+    "error": "",
+    "fb_raw_data": {},
+    "mapped_values": {},
+    "medidesk_form_id": "md-form-1"
+  },
+  {
+    "integration_id": "int-1",
+    "lead_id": "lead_123",
+    "timestamp": "2026-03-22T10:10:53.241039+00:00",
+    "status": "sent",
+    "mapped_fields_count": 2,
+    "error": "",
+    "fb_raw_data": {
+      "email": "test@klinika.pl",
+      "full_name": "Jan Kowalski"
+    },
+    "mapped_values": {
+      "E-mail": "test@klinika.pl",
+      "Imie-i-nazwisko": "Jan Kowalski"
+    },
+    "medidesk_form_id": "md-form-1"
+  },
+  {
+    "integration_id": "int-1",
+    "lead_id": "lead_123",
+    "timestamp": "2026-03-22T11:59:35.908034+00:00",
+    "status": "received",
+    "mapped_fields_count": 0,
+    "error": "",
+    "fb_raw_data": {},
+    "mapped_values": {},
+    "medidesk_form_id": "md-form-1"
+  },
+  {
+    "integration_id": "int-1",
+    "lead_id": "lead_123",
+    "timestamp": "2026-03-22T11:59:35.913271+00:00",
+    "status": "sent",
+    "mapped_fields_count": 2,
+    "error": "",
+    "fb_raw_data": {
+      "email": "test@klinika.pl",
+      "full_name": "Jan Kowalski"
+    },
+    "mapped_values": {
+      "E-mail": "test@klinika.pl",
+      "Imie-i-nazwisko": "Jan Kowalski"
+    },
+    "medidesk_form_id": "md-form-1"
+  },
+  {
+    "integration_id": "int-1",
+    "lead_id": "lead_123",
+    "timestamp": "2026-03-22T12:01:06.303700+00:00",
+    "status": "received",
+    "mapped_fields_count": 0,
+    "error": "",
+    "fb_raw_data": {},
+    "mapped_values": {},
+    "medidesk_form_id": "md-form-1"
+  },
+  {
+    "integration_id": "int-1",
+    "lead_id": "lead_123",
+    "timestamp": "2026-03-22T12:01:06.305209+00:00",
+    "status": "sent",
+    "mapped_fields_count": 2,
+    "error": "",
+    "fb_raw_data": {
+      "email": "test@klinika.pl",
+      "full_name": "Jan Kowalski"
+    },
+    "mapped_values": {
+      "E-mail": "test@klinika.pl",
+      "Imie-i-nazwisko": "Jan Kowalski"
+    },
+    "medidesk_form_id": "md-form-1"
+  }
+]

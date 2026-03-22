@@ -52,7 +52,7 @@ class TestWebhookHandler:
 
     @patch("app.webhook.submit_form_urlencoded", new_callable=AsyncMock)
     @patch("app.webhook.get_lead_data", new_callable=AsyncMock)
-    @patch("app.webhook.find_by_fb_page")
+    @patch("app.webhook.find_by_fb_page_and_form")
     def test_processes_lead(self, mock_find, mock_lead, mock_submit):
         mock_find.return_value = Integration(
             id="int-1",
@@ -90,7 +90,7 @@ class TestWebhookHandler:
         assert call_args[0][1]["E-mail"] == "test@klinika.pl"
         assert call_args[0][1]["Imie-i-nazwisko"] == "Jan Kowalski"
 
-    @patch("app.webhook.find_by_fb_page")
+    @patch("app.webhook.find_by_fb_page_and_form")
     def test_ignores_unknown_page(self, mock_find):
         mock_find.return_value = None
         resp = client.post("/webhook/facebook", json=self.LEADGEN_PAYLOAD)
