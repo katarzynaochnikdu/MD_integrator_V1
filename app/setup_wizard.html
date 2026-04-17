@@ -1331,7 +1331,7 @@
         <div id="missing-row-${f.fieldId}" style="padding:0.55rem 0.7rem;background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.2);border-radius:8px;margin-top:0.45rem;">
           <div style="display:grid;grid-template-columns:minmax(0,1fr) auto 20px auto;gap:0.55rem;align-items:center;">
             <select class="fb-quickmap-select" data-md="${f.fieldId}" style="padding:0.4rem 0.55rem;background:#0a0a0f;border:1px solid rgba(34,197,94,0.3);border-radius:6px;color:#86efac;font-size:0.8rem;min-width:0;">${fbOpts}</select>
-            <button class="btn btn-outline btn-open-const" data-md="${f.fieldId}" style="padding:0.4rem 0.7rem;font-size:0.78rem;border-color:rgba(139,92,246,0.5);color:#a78bfa;white-space:nowrap;">🔒 Stała wartość</button>
+            <button class="btn btn-outline btn-open-const" data-md="${f.fieldId}" style="padding:0.4rem 0.7rem;font-size:0.78rem;border-color:rgba(139,92,246,0.5);color:#a78bfa;white-space:nowrap;">📌 Stała wartość</button>
             <span style="color:#52525b;text-align:center;font-size:0.9rem;">→</span>
             <code style="background:rgba(245,158,11,0.15);padding:0.2rem 0.55rem;border-radius:5px;color:#fbbf24;font-weight:600;font-size:0.82rem;white-space:nowrap;">${f.fieldId}<span style="color:#71717a;font-weight:400;font-size:0.68rem;margin-left:0.4rem;">wymagane</span></code>
           </div>
@@ -1381,7 +1381,7 @@
       let chipStyle;
       if (isConst) {
         const constVal = fbField.replace('__const:', '').replace('__', '');
-        displayName = `🔒 Stała: "${constVal}"`;
+        displayName = `📌 Stała: "${constVal}"`;
         chipStyle = 'border-style:dashed;border-color:#8b5cf6;opacity:0.9;';
       } else if (isVirtual) {
         displayName = virtualLabels[fbField] || fbField;
