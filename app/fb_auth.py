@@ -63,7 +63,7 @@ def set_session_cookie(response: Response, data: dict[str, Any]) -> None:
         max_age=COOKIE_MAX_AGE,
         httponly=True,
         samesite="lax",
-        secure=False,  # set True in production with HTTPS
+        secure=True,  # HTTPS only — required for production
     )
 
 
@@ -154,10 +154,22 @@ SESSION_TTL = 3 * 3600  # 3 hours in seconds
 
 
 def _save_session(session_id: str, session_data: dict) -> None:
-    """Save session to SQLite."""
+    """Save session to SQLite. Access token is encrypted at rest."""
     import json
     import time
     from app.db import get_connection
+    from app.integrations_store import _fernet
+
+    # Encrypt access_token at rest
+    raw_token = session_data.get("access_token", "")
+    encrypted_token = _fernet.encrypt(raw_token.encode()).decode() if raw_token else ""
+
+    # Strip page access_tokens from pages data (sensitive, not needed in session)
+    pages_safe = [
+        {"page_id": p.get("page_id", ""), "name": p.get("name", "")}
+        for p in session_data.get("pages", [])
+    ]
+
     conn = get_connection()
     conn.execute(
         """INSERT OR REPLACE INTO sessions
@@ -165,9 +177,9 @@ def _save_session(session_id: str, session_data: dict) -> None:
            VALUES (?, ?, ?, ?, ?, ?)""",
         (
             session_id,
-            session_data.get("access_token", ""),
+            encrypted_token,
             json.dumps(session_data.get("user", {}), ensure_ascii=False),
-            json.dumps(session_data.get("pages", []), ensure_ascii=False),
+            json.dumps(pages_safe, ensure_ascii=False),
             session_data.get("role", "user"),
             time.time(),
         ),
@@ -192,6 +204,8 @@ def _get_valid_session(session_id: str) -> dict | None:
     import json
     import time
     from app.db import get_connection
+    from app.integrations_store import _fernet
+
     conn = get_connection()
     row = conn.execute(
         "SELECT * FROM sessions WHERE session_id = ?", (session_id,)
@@ -202,8 +216,16 @@ def _get_valid_session(session_id: str) -> dict | None:
         conn.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
         conn.commit()
         return None
+
+    # Decrypt access_token
+    encrypted_token = row["access_token"]
+    try:
+        access_token = _fernet.decrypt(encrypted_token.encode()).decode() if encrypted_token else ""
+    except Exception:
+        access_token = ""  # corrupted token, session still valid for UI
+
     return {
-        "access_token": row["access_token"],
+        "access_token": access_token,
         "user": json.loads(row["user_data"]),
         "pages": json.loads(row["pages_data"]),
         "role": row["role"],
@@ -354,21 +376,26 @@ async def admin_login(request: Request):
 @router.get("/pages/{session_id}/{page_id}/forms")
 async def get_page_forms(session_id: str, page_id: str):
     """Get Lead Ad forms for a specific page from a session."""
-    from app.fb_client import get_page_lead_forms
+    from app.fb_client import get_page_lead_forms, get_user_pages
 
     session = _get_valid_session(session_id)
     if not session:
         return JSONResponse(status_code=404, content={"error": "Session not found or expired"})
 
-    # Find the page token
+    # Verify user has access to this page, then get fresh page token from FB API
+    access_token = session.get("access_token", "")
+    if not access_token:
+        return JSONResponse(status_code=401, content={"error": "No valid access token"})
+
+    pages = await get_user_pages(access_token)
     page_token = None
-    for p in session["pages"]:
-        if p["page_id"] == page_id:
-            page_token = p["access_token"]
+    for p in pages:
+        if p.page_id == page_id:
+            page_token = p.access_token
             break
 
     if not page_token:
-        return JSONResponse(status_code=404, content={"error": f"Page {page_id} not found in session"})
+        return JSONResponse(status_code=404, content={"error": f"Page {page_id} not found or no access"})
 
     forms = await get_page_lead_forms(page_id, page_token)
     return {
