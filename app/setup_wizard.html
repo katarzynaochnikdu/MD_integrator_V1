@@ -1007,7 +1007,7 @@
         state.mappings = data.suggestions || [];
 
         document.getElementById('mapping-info-text').textContent =
-          `AI dopasowało ${data.matched} z ${data.total_fb_fields} pól. Przeciągnij aby poprawić.`;
+          `AI dopasowało ${data.matched} z ${data.total_fb_fields} pól. Użyj list aby poprawić.`;
 
         renderMappings();
       } catch (e) {
@@ -1082,7 +1082,7 @@
         }
       }
       const info = document.getElementById('mapping-info-text');
-      info.textContent = `Zmapowano ${state.mappings.length} pól. Przeciągnij aby poprawić.`;
+      info.textContent = `Zmapowano ${state.mappings.length} pól. Użyj list aby poprawić.`;
     }
 
     // ─── Step 3 → 4: Save & Activate ────────────────────
