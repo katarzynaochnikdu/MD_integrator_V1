@@ -26,8 +26,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth/facebook", tags=["Facebook Auth"])
 
 COOKIE_NAME = "fb_session"
-COOKIE_MAX_AGE = 7 * 24 * 3600  # 7 days
-SESSION_TTL = 3 * 3600  # 3 hours for SQLite sessions
+COOKIE_MAX_AGE = 3 * 3600  # 3h — matches server-side SESSION_TTL (security policy)
+SESSION_TTL = 3 * 3600  # 3 hours — sliding (measured from last_activity_at)
+ACTIVITY_WRITE_THROTTLE = 60  # write last_activity_at to DB at most every 60s
 
 
 # ─── Signed cookie helpers ─────────────────────────────────────────
@@ -168,11 +169,13 @@ def _save_session(session_id: str, session_data: dict) -> None:
         for p in session_data.get("pages", [])
     ]
 
+    now = time.time()
+    fb_user_id = (session_data.get("user") or {}).get("id", "")
     conn = get_connection()
     conn.execute(
         """INSERT OR REPLACE INTO sessions
-           (session_id, access_token, user_data, pages_data, role, facility_id, facility_name, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+           (session_id, access_token, user_data, pages_data, role, facility_id, facility_name, created_at, last_activity_at, fb_user_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             session_id,
             encrypted_token,
@@ -181,26 +184,69 @@ def _save_session(session_id: str, session_data: dict) -> None:
             session_data.get("role", "user"),
             session_data.get("facility_id", ""),
             session_data.get("facility_name", ""),
-            time.time(),
+            now,
+            now,
+            fb_user_id,
         ),
     )
     conn.commit()
 
 
+def _touch_session_activity(session_id: str, last_seen: float | None) -> None:
+    """Update last_activity_at (throttled — at most once per ACTIVITY_WRITE_THROTTLE seconds)."""
+    import time
+    now = time.time()
+    if last_seen is not None and now - last_seen < ACTIVITY_WRITE_THROTTLE:
+        return
+    from app.db import get_connection
+    conn = get_connection()
+    conn.execute("UPDATE sessions SET last_activity_at = ? WHERE session_id = ?", (now, session_id))
+    conn.commit()
+
+
+def audit_log(event: str, *, session_id: str = "", fb_user_id: str = "", request: Request | None = None) -> None:
+    """Write an entry to session_audit (RODO-friendly login/logout trail)."""
+    import time
+    from app.db import get_connection
+    ip = ""
+    ua = ""
+    if request is not None:
+        ip = request.client.host if request.client else ""
+        ua = request.headers.get("user-agent", "")[:300]
+    try:
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO session_audit (event, session_id, fb_user_id, ip, user_agent, ts) VALUES (?, ?, ?, ?, ?, ?)",
+            (event, session_id, fb_user_id, ip, ua, time.time()),
+        )
+        conn.commit()
+    except Exception:
+        logger.warning("audit_log failed for event=%s", event, exc_info=True)
+
+
 def _cleanup_expired_sessions():
-    """Remove sessions older than SESSION_TTL."""
+    """Remove sessions idle longer than SESSION_TTL (sliding expiry)."""
     import time
     from app.db import get_connection
     conn = get_connection()
     cutoff = time.time() - SESSION_TTL
-    result = conn.execute("DELETE FROM sessions WHERE created_at < ?", (cutoff,))
+    # Idle cutoff based on last_activity_at; fallback to created_at for legacy rows
+    result = conn.execute(
+        "DELETE FROM sessions WHERE COALESCE(last_activity_at, created_at) < ?",
+        (cutoff,),
+    )
     conn.commit()
     if result.rowcount > 0:
         logger.info("Cleaned up %d expired sessions", result.rowcount)
 
 
 def _get_valid_session(session_id: str) -> dict | None:
-    """Get session from SQLite if it exists and hasn't expired."""
+    """Get session from SQLite if it exists and hasn't been idle longer than SESSION_TTL.
+
+    Implements sliding expiry: TTL is measured from last_activity_at (falling back to
+    created_at for legacy rows). On successful access, last_activity_at is touched —
+    throttled so we don't hammer the DB on every request.
+    """
     import json
     import time
     from app.db import get_connection
@@ -212,10 +258,17 @@ def _get_valid_session(session_id: str) -> dict | None:
     ).fetchone()
     if not row:
         return None
-    if time.time() - row["created_at"] > SESSION_TTL:
+
+    cols = row.keys()
+    last_activity = row["last_activity_at"] if "last_activity_at" in cols and row["last_activity_at"] is not None else row["created_at"]
+
+    if time.time() - last_activity > SESSION_TTL:
         conn.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
         conn.commit()
         return None
+
+    # Sliding refresh (throttled write)
+    _touch_session_activity(session_id, last_activity)
 
     # Decrypt access_token
     encrypted_token = row["access_token"]
@@ -233,8 +286,9 @@ def _get_valid_session(session_id: str) -> dict | None:
         "user": json.loads(row["user_data"]),
         "pages": json.loads(row["pages_data"]),
         "role": row["role"],
-        "facility_id": row["facility_id"] if "facility_id" in row.keys() else "",
-        "facility_name": row["facility_name"] if "facility_name" in row.keys() else "",
+        "facility_id": row["facility_id"] if "facility_id" in cols else "",
+        "facility_name": row["facility_name"] if "facility_name" in cols else "",
+        "fb_user_id": row["fb_user_id"] if "fb_user_id" in cols else (json.loads(row["user_data"]).get("id", "") if row["user_data"] else ""),
     }
 
 
@@ -243,9 +297,24 @@ def _get_valid_session(session_id: str) -> dict | None:
 
 @router.get("")
 async def facebook_login(request: Request):
-    """Redirect the user to Facebook OAuth login dialog."""
-    # Capture the intended redirect destination
+    """Redirect the user to Facebook OAuth login dialog.
+
+    Smart-skip: if the user has a valid server-side session within the 3h sliding
+    TTL, we do NOT round-trip through Facebook (which would show the "Reconnect"
+    consent screen). Instead we go straight to the requested destination. This
+    preserves the 3h security policy while removing friction inside that window.
+
+    Pass ?force=1 to explicitly force re-auth with Facebook (e.g. to switch accounts).
+    """
     redirect_to = request.query_params.get("redirect", "/dashboard")
+    force = request.query_params.get("force", "") in ("1", "true", "yes")
+
+    if not force:
+        session = get_session_from_cookie(request)
+        if session and session.get("role") in ("user", "admin"):
+            audit_log("login_skip_oauth", session_id="", fb_user_id=session.get("fb_user_id", ""), request=request)
+            return RedirectResponse(redirect_to)
+
     url = get_login_url(state=redirect_to)
     return RedirectResponse(url)
 
@@ -342,6 +411,9 @@ async def _do_facebook_callback(request: Request):
     else:
         redirect_url = f"/dashboard?fb_session={session_id}"
 
+    # Audit — successful FB login
+    audit_log("login_fb", session_id=session_id, fb_user_id=fb_user_id, request=request)
+
     # Set cookie (stores only session_id, not sensitive data) and redirect
     response = RedirectResponse(redirect_url)
     set_session_cookie(response, session_id)
@@ -384,8 +456,54 @@ async def get_current_user_endpoint(request: Request):
 
 @router.post("/logout")
 async def logout(request: Request):
-    """Clear session cookie."""
+    """Clear session cookie and remove the current server-side session."""
+    from app.db import get_connection
+    cookie_raw = request.cookies.get(COOKIE_NAME)
+    sid = _verify(cookie_raw) if cookie_raw else None
+    fb_user_id = ""
+    if sid:
+        sess = _get_valid_session(sid)
+        if sess:
+            fb_user_id = sess.get("fb_user_id", "") or (sess.get("user") or {}).get("id", "")
+        try:
+            conn = get_connection()
+            conn.execute("DELETE FROM sessions WHERE session_id = ?", (sid,))
+            conn.commit()
+        except Exception:
+            logger.warning("Failed to delete session on logout", exc_info=True)
+    audit_log("logout", session_id=sid or "", fb_user_id=fb_user_id, request=request)
+
     response = JSONResponse(content={"status": "logged_out"})
+    response.delete_cookie(COOKIE_NAME)
+    return response
+
+
+@router.post("/logout-all")
+async def logout_all(request: Request):
+    """Revoke ALL sessions for the current user across devices.
+
+    Use when a device is lost/stolen. Requires a valid session to identify the user.
+    """
+    from app.db import get_connection
+    session = get_session_from_cookie(request)
+    if not session:
+        return JSONResponse(status_code=401, content={"error": "Nie zalogowany"})
+    fb_user_id = session.get("fb_user_id", "") or (session.get("user") or {}).get("id", "")
+    if not fb_user_id:
+        return JSONResponse(status_code=400, content={"error": "Brak identyfikatora użytkownika"})
+
+    try:
+        conn = get_connection()
+        cur = conn.execute("DELETE FROM sessions WHERE fb_user_id = ?", (fb_user_id,))
+        conn.commit()
+        revoked = cur.rowcount
+    except Exception:
+        logger.exception("logout-all failed")
+        return JSONResponse(status_code=500, content={"error": "Logout-all failed"})
+
+    audit_log("logout_all", fb_user_id=fb_user_id, request=request)
+
+    response = JSONResponse(content={"status": "all_revoked", "revoked": revoked})
     response.delete_cookie(COOKIE_NAME)
     return response
 
@@ -429,6 +547,7 @@ async def admin_login(request: Request):
     admin_session_id = uuid.uuid4().hex
     _save_session(admin_session_id, session_data)
 
+    audit_log("login_admin", session_id=admin_session_id, fb_user_id="admin", request=request)
     response = JSONResponse(content={"status": "ok", "role": "admin"})
     set_session_cookie(response, admin_session_id)
     return response

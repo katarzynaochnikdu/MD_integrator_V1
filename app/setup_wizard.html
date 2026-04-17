@@ -566,8 +566,11 @@
           </div>
         </div>
 
+        <div id="missing-required-banner" style="display:none;"></div>
         <div id="mapping-rows"></div>
       </div>
+
+      <div id="save-status" style="display:none;margin-top:0.8rem;"></div>
 
       <div class="btn-row">
         <button class="btn btn-outline" onclick="goToStep(2)">← Wstecz</button>
@@ -795,14 +798,20 @@
           state.forms = MOCK_DATA.forms[page.page_id] || [];
         } else {
           const resp = await fetch(`/auth/facebook/pages/${state.sessionId}/${page.page_id}/forms`);
-          const data = await resp.json();
+          const data = await resp.json().catch(() => ({}));
+          if (!resp.ok) {
+            const msg = data.error || data.detail || `HTTP ${resp.status}`;
+            formsList.innerHTML = `<div style="padding:1rem;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.3);border-radius:8px;color:#fca5a5;font-size:0.85rem;">⚠️ Nie udało się pobrać formularzy: ${msg}<br/><span style="color:#71717a;font-size:0.75rem;">Sprawdź czy masz uprawnienia admina na tej Stronie FB.</span></div>`;
+            showToast('Błąd pobierania formularzy: ' + msg, 'error');
+            return;
+          }
           state.forms = data.forms || [];
         }
 
         formsList.innerHTML = '';
 
         if (state.forms.length === 0) {
-          formsList.innerHTML = '<p style="color:#71717a;padding:0.8rem;">Brak formularzy Lead Ads na tej stronie.</p>';
+          formsList.innerHTML = '<div style="padding:1rem;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);border-radius:8px;color:#fbbf24;font-size:0.85rem;">ℹ️ Brak formularzy Lead Ads na tej stronie.<br/><span style="color:#71717a;font-size:0.75rem;">Utwórz formularz w Meta Business Suite → Reklamy Lead, a następnie wróć tu.</span></div>';
           return;
         }
 
@@ -928,6 +937,7 @@
           renderFormsTable(this.value);
         });
       } catch (e) {
+        formsList.innerHTML = `<div style="padding:1rem;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.3);border-radius:8px;color:#fca5a5;font-size:0.85rem;">⚠️ Błąd pobierania formularzy: ${e.message}</div>`;
         showToast('Błąd pobierania formularzy: ' + e.message, 'error');
       }
     }
@@ -1139,6 +1149,33 @@
         state.mappings.push({ fb_field: `__const:${val}__`, medidesk_field: '', confidence: 0 });
         renderMappings();
       });
+
+      // Warning banner: required Medidesk fields without any mapping
+      renderMissingRequiredBanner();
+    }
+
+    function renderMissingRequiredBanner() {
+      const banner = document.getElementById('missing-required-banner');
+      if (!banner) return;
+      const mappedMd = new Set(
+        state.mappings
+          .filter(m => m.medidesk_field && m.medidesk_field.trim())
+          .map(m => m.medidesk_field)
+      );
+      const missing = (state.mdFields || []).filter(f => f.required && !mappedMd.has(f.fieldId));
+      if (missing.length === 0) {
+        banner.style.display = 'none';
+        banner.innerHTML = '';
+        return;
+      }
+      const list = missing.map(f => `<code style="background:rgba(245,158,11,0.15);padding:0.1rem 0.4rem;border-radius:4px;color:#fbbf24;">${f.fieldId}</code>`).join(' ');
+      banner.style.display = 'block';
+      banner.innerHTML = `
+        <div style="margin-bottom:0.8rem;padding:0.8rem 1rem;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);border-radius:10px;color:#fbbf24;font-size:0.85rem;line-height:1.5;">
+          ⚠️ <strong>Wymagane pola Medidesk bez mapowania (${missing.length}):</strong> ${list}<br/>
+          <span style="color:#a1a1aa;font-size:0.78rem;">Zmapuj je na pola FB lub użyj "Stała wartość" (np. dla zgód RODO). Lead bez tych pól może być odrzucony przez Medidesk.</span>
+        </div>
+      `;
     }
 
     function createMappingRow(fbField, mdField, confidence, isVirtual = false) {
@@ -1236,8 +1273,24 @@
     }
 
     // ─── Step 3 → 4: Save & Activate ────────────────────
+    function setSaveStatus(kind, msg) {
+      const el = document.getElementById('save-status');
+      if (!el) return;
+      if (!kind) { el.style.display = 'none'; el.innerHTML = ''; return; }
+      const colors = {
+        pending: { bg: 'rgba(59,130,246,0.08)', bd: 'rgba(59,130,246,0.3)', fg: '#93c5fd', icon: '<span class="spinner" style="display:inline-block;margin-right:0.5rem;border-color:#3b82f6 transparent #3b82f6 transparent;border-width:2px;width:14px;height:14px;vertical-align:middle;"></span>' },
+        success: { bg: 'rgba(34,197,94,0.08)', bd: 'rgba(34,197,94,0.3)', fg: '#86efac', icon: '✓ ' },
+        error:   { bg: 'rgba(239,68,68,0.08)', bd: 'rgba(239,68,68,0.3)', fg: '#fca5a5', icon: '⚠️ ' },
+        warn:    { bg: 'rgba(245,158,11,0.08)', bd: 'rgba(245,158,11,0.3)', fg: '#fbbf24', icon: 'ℹ️ ' },
+      }[kind] || {};
+      el.style.cssText = `display:block;padding:0.8rem 1rem;background:${colors.bg};border:1px solid ${colors.bd};border-radius:10px;color:${colors.fg};font-size:0.9rem;line-height:1.5;`;
+      el.innerHTML = (colors.icon || '') + msg;
+    }
+
     document.getElementById('btn-step3-next').addEventListener('click', async () => {
-      if (state.mappings.length === 0) {
+      const completeMappings = state.mappings.filter(m => m.medidesk_field && m.medidesk_field.trim());
+      if (completeMappings.length === 0) {
+        setSaveStatus('error', 'Zmapuj przynajmniej jedno pole FB na pole Medidesk przed zapisaniem.');
         showToast('Zmapuj przynajmniej jedno pole!', 'error');
         return;
       }
@@ -1245,6 +1298,7 @@
       const btn = document.getElementById('btn-step3-next');
       btn.disabled = true;
       btn.innerHTML = '<span class="spinner"></span> Aktywuję...';
+      setSaveStatus('pending', 'Zapisuję integrację i subskrybuję webhook FB…');
 
       try {
         if (DEMO_MODE) {
@@ -1284,8 +1338,13 @@
           const actData = await actResp.json();
 
           if (!actResp.ok) {
+            setSaveStatus('warn', 'Integracja zapisana, ale webhook nie został ustawiony: ' + (actData.error || '') + '. Możesz spróbować ręcznie z poziomu "Moje integracje".');
             showToast('Integracja zapisana, ale webhook nie został ustawiony: ' + (actData.error || ''), 'error');
+          } else {
+            setSaveStatus('success', 'Integracja aktywna. Webhook FB zasubskrybowany — nowe leady będą trafiać do Medidesk.');
           }
+        } else {
+          setSaveStatus('success', 'DEMO: Integracja aktywna (symulacja).');
         }
 
         // Show summary
@@ -1314,6 +1373,7 @@
         goToStep(4);
         showToast(DEMO_MODE ? 'DEMO: Integracja aktywna! (symulacja)' : 'Integracja aktywna!', 'success');
       } catch (e) {
+        setSaveStatus('error', 'Nie udało się zapisać integracji: ' + e.message);
         showToast('Błąd: ' + e.message, 'error');
         btn.disabled = false;
         btn.textContent = 'Zapisz i aktywuj ✓';

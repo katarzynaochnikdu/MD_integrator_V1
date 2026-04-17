@@ -237,7 +237,11 @@ async def suggest_field_mapping(request: Request):
 @app.post("/api/integrations")
 async def create_new_integration(request: Request, _session=Depends(require_auth)):
     """Create a new FB→Medidesk integration with field mappings."""
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception as e:
+        logger.warning("POST /api/integrations: invalid JSON body: %s", e)
+        return JSONResponse(status_code=400, content={"error": "Invalid JSON body"})
 
     required = ["fb_page_id", "fb_page_name",
                  "fb_form_id", "fb_form_name",
@@ -247,42 +251,75 @@ async def create_new_integration(request: Request, _session=Depends(require_auth
         if field not in body:
             return JSONResponse(status_code=400, content={"error": f"Missing required field: {field}"})
 
+    # Normalize + validate field_mappings (filter empty medidesk_field — wizard may push placeholders)
+    raw_mappings = body.get("field_mappings") or []
+    if not isinstance(raw_mappings, list):
+        return JSONResponse(status_code=400, content={"error": "field_mappings must be a list"})
+
+    valid_mappings = []
+    for idx, m in enumerate(raw_mappings):
+        if not isinstance(m, dict):
+            continue
+        fb_field = (m.get("fb_field") or "").strip()
+        medidesk_field = (m.get("medidesk_field") or "").strip()
+        if not fb_field or not medidesk_field:
+            continue  # skip incomplete mapping rows
+        try:
+            confidence = float(m.get("confidence", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            confidence = 0.0
+        valid_mappings.append(FieldMapping(
+            fb_field=fb_field,
+            medidesk_field=medidesk_field,
+            confidence=confidence,
+        ))
+
+    if not valid_mappings:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Brak kompletnych mapowań pól — zmapuj przynajmniej jedno pole FB na pole Medidesk."},
+        )
+
     # Securely retrieve the page token from FB API using user's access token
-    from app.fb_client import get_user_pages
-    user_token = _session.get("access_token", "")
-    pages = await get_user_pages(user_token)
-    
+    try:
+        from app.fb_client import get_user_pages
+        user_token = _session.get("access_token", "")
+        if not user_token:
+            return JSONResponse(status_code=401, content={"error": "Sesja wygasła lub nie zawiera tokenu FB — zaloguj się ponownie."})
+        pages = await get_user_pages(user_token)
+    except Exception as e:
+        logger.exception("POST /api/integrations: failed to fetch FB pages")
+        return JSONResponse(status_code=502, content={"error": f"Nie udało się pobrać Stron FB: {e}"})
+
     fb_page_token = None
     for p in pages:
         if p.page_id == body["fb_page_id"]:
             fb_page_token = p.access_token
             break
-            
+
     if not fb_page_token:
-        return JSONResponse(status_code=403, content={"error": "User does not have access to this page (cannot retrieve page token)."})
-
-    mappings = [
-        FieldMapping(
-            fb_field=m["fb_field"],
-            medidesk_field=m["medidesk_field"],
-            confidence=m.get("confidence", 0.0),
+        return JSONResponse(
+            status_code=403,
+            content={"error": "Brak dostępu do tej Strony FB (nie udało się pobrać tokenu). Sprawdź, czy Twoje konto FB ma rolę admina na tej Stronie."},
         )
-        for m in body["field_mappings"]
-    ]
 
-    integration = create_integration(
-        fb_page_id=body["fb_page_id"],
-        fb_page_name=body["fb_page_name"],
-        fb_page_token=fb_page_token,
-        fb_form_id=body["fb_form_id"],
-        fb_form_name=body["fb_form_name"],
-        fb_form_questions=body.get("fb_form_questions", []),
-        medidesk_form_id=body["medidesk_form_id"],
-        medidesk_form_name=body.get("medidesk_form_name", ""),
-        medidesk_fields=body.get("medidesk_fields", []),
-        field_mappings=mappings,
-        facility_id=_session.get("facility_id", ""),
-    )
+    try:
+        integration = create_integration(
+            fb_page_id=body["fb_page_id"],
+            fb_page_name=body["fb_page_name"],
+            fb_page_token=fb_page_token,
+            fb_form_id=body["fb_form_id"],
+            fb_form_name=body["fb_form_name"],
+            fb_form_questions=body.get("fb_form_questions") or [],
+            medidesk_form_id=body["medidesk_form_id"],
+            medidesk_form_name=body.get("medidesk_form_name", "") or "",
+            medidesk_fields=body.get("medidesk_fields") or [],
+            field_mappings=valid_mappings,
+            facility_id=_session.get("facility_id", "") or "",
+        )
+    except Exception as e:
+        logger.exception("POST /api/integrations: create_integration failed")
+        return JSONResponse(status_code=500, content={"error": f"Nie udało się zapisać integracji: {e}"})
 
     return {"status": "created", "integration": asdict(integration)}
 

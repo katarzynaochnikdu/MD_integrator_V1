@@ -95,8 +95,27 @@ def _init_tables(conn: sqlite3.Connection) -> None:
             role TEXT NOT NULL DEFAULT 'user',
             facility_id TEXT DEFAULT '',
             facility_name TEXT DEFAULT '',
-            created_at REAL NOT NULL
+            created_at REAL NOT NULL,
+            last_activity_at REAL,
+            fb_user_id TEXT DEFAULT ''
         );
+
+        CREATE TABLE IF NOT EXISTS session_audit (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event TEXT NOT NULL,
+            session_id TEXT DEFAULT '',
+            fb_user_id TEXT DEFAULT '',
+            ip TEXT DEFAULT '',
+            user_agent TEXT DEFAULT '',
+            ts REAL NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_session_audit_ts
+            ON session_audit(ts);
+        CREATE INDEX IF NOT EXISTS idx_session_audit_fb_user
+            ON session_audit(fb_user_id);
+        CREATE INDEX IF NOT EXISTS idx_sessions_fb_user
+            ON sessions(fb_user_id);
 
         CREATE TABLE IF NOT EXISTS facilities (
             id TEXT PRIMARY KEY,
@@ -132,6 +151,8 @@ def _init_tables(conn: sqlite3.Connection) -> None:
     _safe_add_column(conn, "integrations", "facility_id", "TEXT DEFAULT ''")
     _safe_add_column(conn, "sessions", "facility_id", "TEXT DEFAULT ''")
     _safe_add_column(conn, "sessions", "facility_name", "TEXT DEFAULT ''")
+    _safe_add_column(conn, "sessions", "last_activity_at", "REAL")
+    _safe_add_column(conn, "sessions", "fb_user_id", "TEXT DEFAULT ''")
 
     # Create indexes on migrated columns (safe — column now exists)
     try:
