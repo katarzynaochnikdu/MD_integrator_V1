@@ -325,15 +325,25 @@
     .form-summary-box .sub { font-size: 0.7rem; color: #52525b; margin-top: 0.15rem; }
 
     .mapping-row {
-      display: flex;
+      display: grid;
+      grid-template-columns: minmax(160px, 1fr) 24px minmax(180px, 1.2fr) 80px;
       align-items: center;
-      gap: 0.5rem;
+      gap: 0.6rem;
       padding: 0.6rem 0.8rem;
       border-bottom: 1px solid #1a1b25;
       transition: background 0.1s;
     }
     .mapping-row:hover { background: rgba(255,255,255,0.02); }
     .mapping-row:last-child { border-bottom: none; }
+    .mapping-row > .field-chip { flex: none; width: 100%; }
+    .mapping-row > .md-select { flex: none; width: 100%; }
+    .mapping-row .row-meta {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 0.4rem;
+      min-width: 0;
+    }
 
     .field-chip {
       display: flex;
@@ -1086,21 +1096,26 @@
       container.innerHTML = '';
 
       const fbQuestions = state.selectedForm.questions || [];
-
-      // Build mapped set
       const mappedFb = new Set(state.mappings.map(m => m.fb_field));
 
-      // Render mapped fields first
-      state.mappings.forEach(m => {
-        const isVirtual = m.fb_field.startsWith('__');
-        container.appendChild(createMappingRow(m.fb_field, m.medidesk_field, m.confidence, isVirtual));
-      });
-
-      // Render unmapped FB fields
+      // Section 1 — real FB form fields in form order (mapped or not).
       fbQuestions.forEach(q => {
         const key = q.key || q.name || q.label || '';
-        if (!mappedFb.has(key)) {
-          container.appendChild(createMappingRow(key, '', 0, false));
+        const m = state.mappings.find(mp => mp.fb_field === key);
+        container.appendChild(createMappingRow(key, (m && m.medidesk_field) || '', (m && m.confidence) || 0, false));
+      });
+
+      // Section 2 — virtual meta fields (user-added, in insertion order, after real FB fields).
+      state.mappings.forEach(m => {
+        if (m.fb_field.startsWith('__fb_')) {
+          container.appendChild(createMappingRow(m.fb_field, m.medidesk_field, m.confidence, true));
+        }
+      });
+
+      // Section 3 — constants (user-added, always last before the "add" controls).
+      state.mappings.forEach(m => {
+        if (m.fb_field.startsWith('__const:')) {
+          container.appendChild(createMappingRow(m.fb_field, m.medidesk_field, m.confidence, false));
         }
       });
 
@@ -1154,6 +1169,82 @@
       renderMissingRequiredBanner();
     }
 
+    // Pattern-based smart defaults for common required fields.
+    // Returns { value, hint } or null if no suggestion.
+    function guessConstantDefault(fieldId) {
+      const id = (fieldId || '').toLowerCase();
+      if (/zgod|consent|rodo|gdpr|regulamin|marketingow/.test(id))
+        return { value: 'true', hint: 'Pole zgody — zwykle "true" (user wyraził zgodę klikając FB formularz)' };
+      if (/^source$|^zrodlo$|kanal|channel/.test(id))
+        return { value: 'Facebook Lead Ads', hint: 'Pole źródła leada' };
+      if (/utm_source/.test(id)) return { value: 'fb', hint: 'UTM source' };
+      if (/utm_medium/.test(id)) return { value: 'paid_social', hint: 'UTM medium' };
+      if (/utm_campaign/.test(id)) return { value: 'facebook_leads', hint: 'UTM campaign' };
+      return null;
+    }
+
+    // Toggle save button availability based on missing required fields.
+    function updateSaveButtonState(missingCount) {
+      const btn = document.getElementById('btn-step3-next');
+      if (!btn) return;
+      if (missingCount > 0) {
+        btn.disabled = true;
+        btn.style.opacity = '0.55';
+        btn.style.cursor = 'not-allowed';
+        btn.title = `Uzupełnij ${missingCount} wymagane pole${missingCount > 1 ? 'a' : ''} przed zapisem`;
+      } else {
+        btn.disabled = false;
+        btn.style.opacity = '';
+        btn.style.cursor = '';
+        btn.title = '';
+      }
+    }
+
+    // Open inline constant editor for a specific required MD field.
+    function openConstantEditor(fieldId) {
+      const row = document.getElementById(`missing-row-${fieldId}`);
+      if (!row) return;
+      const editor = row.querySelector('.const-editor');
+      const suggest = guessConstantDefault(fieldId);
+      const defaultVal = suggest ? suggest.value : '';
+      const hint = suggest ? suggest.hint : 'Podaj wartość, która trafi do tego pola dla każdego leada.';
+      editor.innerHTML = `
+        <div style="margin-top:0.5rem;padding:0.6rem 0.7rem;background:rgba(139,92,246,0.08);border:1px solid rgba(139,92,246,0.35);border-radius:8px;">
+          <div style="font-size:0.72rem;color:#a78bfa;margin-bottom:0.4rem;">💡 ${hint}</div>
+          <div style="display:flex;gap:0.4rem;align-items:center;">
+            <input type="text" class="const-input" value="${defaultVal.replace(/"/g,'&quot;')}" placeholder="np. true"
+                   style="flex:1;padding:0.4rem 0.6rem;background:#0a0a0f;border:1px solid rgba(139,92,246,0.4);border-radius:6px;color:#e4e4e7;font-size:0.85rem;" />
+            <button class="btn btn-primary btn-apply-const" style="padding:0.4rem 0.9rem;font-size:0.8rem;">✓ Dodaj</button>
+            <button class="btn btn-outline btn-cancel-const" style="padding:0.4rem 0.8rem;font-size:0.8rem;">Anuluj</button>
+          </div>
+        </div>
+      `;
+      editor.style.display = 'block';
+      const input = editor.querySelector('.const-input');
+      input.focus(); input.select();
+      editor.querySelector('.btn-apply-const').addEventListener('click', () => applyConstantToField(fieldId, input.value));
+      editor.querySelector('.btn-cancel-const').addEventListener('click', () => { editor.style.display = 'none'; editor.innerHTML = ''; });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') applyConstantToField(fieldId, input.value);
+        if (e.key === 'Escape') { editor.style.display = 'none'; editor.innerHTML = ''; }
+      });
+    }
+
+    // Apply a constant value to a required MD field (creates mapping row).
+    function applyConstantToField(fieldId, rawValue) {
+      const val = (rawValue || '').trim();
+      if (!val) { showToast('Podaj wartość stałej', 'error'); return; }
+      // Remove any prior mapping for this MD field (if user changes mind)
+      state.mappings = state.mappings.filter(m => m.medidesk_field !== fieldId);
+      state.mappings.push({
+        fb_field: `__const:${val}__`,
+        medidesk_field: fieldId,
+        confidence: 1.0,
+      });
+      renderMappings();
+      showToast(`Dodano stałą wartość dla: ${fieldId}`, 'success');
+    }
+
     function renderMissingRequiredBanner() {
       const banner = document.getElementById('missing-required-banner');
       if (!banner) return;
@@ -1163,27 +1254,57 @@
           .map(m => m.medidesk_field)
       );
       const missing = (state.mdFields || []).filter(f => f.required && !mappedMd.has(f.fieldId));
+      updateSaveButtonState(missing.length);
       if (missing.length === 0) {
         banner.style.display = 'none';
         banner.innerHTML = '';
         return;
       }
-      const list = missing.map(f => `<code style="background:rgba(245,158,11,0.15);padding:0.1rem 0.4rem;border-radius:4px;color:#fbbf24;">${f.fieldId}</code>`).join(' ');
+      // Build an FB-field options list (for inline "map from FB" select).
+      const fbOpts = ['<option value="">— wybierz FB pole —</option>']
+        .concat((state.selectedForm && state.selectedForm.questions || []).map(q => {
+          const key = q.key || q.name || q.id;
+          const lbl = q.label || key;
+          return `<option value="${key}">${lbl}${lbl !== key ? ' ('+key+')' : ''}</option>`;
+        }))
+        .join('');
+      const rowsHtml = missing.map(f => `
+        <div id="missing-row-${f.fieldId}" style="padding:0.55rem 0.7rem;background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.2);border-radius:8px;margin-top:0.45rem;">
+          <div style="display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;">
+            <code style="background:rgba(245,158,11,0.15);padding:0.15rem 0.5rem;border-radius:5px;color:#fbbf24;font-weight:600;">${f.fieldId}</code>
+            <span style="color:#71717a;font-size:0.75rem;">wymagane</span>
+            <div style="flex:1;"></div>
+            <select class="fb-quickmap-select" data-md="${f.fieldId}" style="padding:0.35rem 0.5rem;background:#0a0a0f;border:1px solid rgba(245,158,11,0.3);border-radius:6px;color:#e4e4e7;font-size:0.78rem;max-width:200px;">${fbOpts}</select>
+            <button class="btn btn-outline btn-open-const" data-md="${f.fieldId}" style="padding:0.35rem 0.7rem;font-size:0.78rem;border-color:rgba(139,92,246,0.5);color:#a78bfa;">🔒 Stała wartość</button>
+          </div>
+          <div class="const-editor" style="display:none;"></div>
+        </div>
+      `).join('');
       banner.style.display = 'block';
       banner.innerHTML = `
-        <div style="margin-bottom:0.8rem;padding:0.8rem 1rem;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);border-radius:10px;color:#fbbf24;font-size:0.85rem;line-height:1.5;">
-          ⚠️ <strong>Wymagane pola Medidesk bez mapowania (${missing.length}):</strong> ${list}<br/>
-          <span style="color:#a1a1aa;font-size:0.78rem;">Zmapuj je na pola FB lub użyj "Stała wartość" (np. dla zgód RODO). Lead bez tych pól może być odrzucony przez Medidesk.</span>
+        <div style="margin-bottom:0.8rem;padding:0.85rem 1rem;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);border-radius:10px;color:#fbbf24;font-size:0.85rem;line-height:1.5;">
+          ⚠️ <strong>Wymagane pola Medidesk bez mapowania (${missing.length})</strong>
+          <div style="color:#a1a1aa;font-size:0.78rem;margin-bottom:0.3rem;">Zmapuj każde na pole FB albo ustaw stałą wartość (np. dla zgód RODO). Bez tego nie da się zapisać integracji — Medidesk odrzuci leady.</div>
+          ${rowsHtml}
         </div>
       `;
+      // Wire up inline actions
+      banner.querySelectorAll('.fb-quickmap-select').forEach(sel => {
+        sel.addEventListener('change', function() {
+          const md = this.dataset.md;
+          const fb = this.value;
+          if (!fb) return;
+          updateMapping(fb, md);
+        });
+      });
+      banner.querySelectorAll('.btn-open-const').forEach(btn => {
+        btn.addEventListener('click', function() { openConstantEditor(this.dataset.md); });
+      });
     }
 
     function createMappingRow(fbField, mdField, confidence, isVirtual = false) {
       const row = document.createElement('div');
       row.className = 'mapping-row';
-
-      const confClass = confidence >= 0.9 ? 'confidence-high' : confidence >= 0.6 ? 'confidence-med' : 'confidence-low';
-      const confText = confidence > 0 ? Math.round(confidence * 100) + '%' : '—';
 
       // Friendly label for virtual/constant fields
       const isConst = fbField.startsWith('__const:');
@@ -1202,7 +1323,7 @@
       let chipStyle;
       if (isConst) {
         const constVal = fbField.replace('__const:', '').replace('__', '');
-        displayName = `✏️ "${constVal}"`;
+        displayName = `🔒 Stała: "${constVal}"`;
         chipStyle = 'border-style:dashed;border-color:#8b5cf6;opacity:0.9;';
       } else if (isVirtual) {
         displayName = virtualLabels[fbField] || fbField;
@@ -1222,20 +1343,29 @@
       // Check if this MD field is used by another FB field (merge)
       const mergeFields = state.mappings.filter(m => m.medidesk_field === mdField && m.fb_field !== fbField);
       const isMerge = mdField && mergeFields.length > 0;
+      // Show remove button only for user-added rows (virtuals & constants); real FB fields can only be "— nie mapuj —"
+      const canRemove = isVirtual || isConst;
 
       row.innerHTML = `
         <span class="field-chip fb" style="${chipStyle}">${displayName}</span>
-        <span class="mapping-arrow" style="width:24px; text-align:center;">↔</span>
+        <span class="mapping-arrow" style="text-align:center;">↔</span>
         <select class="md-select" data-fb="${fbField}">${options.join('')}</select>
-        <div style="display:flex; align-items:center; justify-content:flex-end; width:100px; gap:0.4rem; flex-shrink:0;">
+        <div class="row-meta">
           ${isMerge ? '<span style="font-size:0.65rem;color:#f59e0b;font-weight:600;padding:0.1rem 0.4rem;background:rgba(245,158,11,0.12);border-radius:6px;">łączy</span>' : ''}
-          <span class="confidence-badge ${confClass}" style="min-width:auto;">${confText}</span>
+          ${canRemove ? '<button class="btn-remove-row" title="Usuń" style="background:none;border:none;color:#71717a;cursor:pointer;font-size:1rem;padding:0.1rem 0.3rem;">×</button>' : ''}
         </div>
       `;
 
       row.querySelector('.md-select').addEventListener('change', function() {
         updateMapping(fbField, this.value);
       });
+      const rm = row.querySelector('.btn-remove-row');
+      if (rm) {
+        rm.addEventListener('click', () => {
+          state.mappings = state.mappings.filter(m => m.fb_field !== fbField);
+          renderMappings();
+        });
+      }
 
       return row;
     }
@@ -1292,6 +1422,15 @@
       if (completeMappings.length === 0) {
         setSaveStatus('error', 'Zmapuj przynajmniej jedno pole FB na pole Medidesk przed zapisaniem.');
         showToast('Zmapuj przynajmniej jedno pole!', 'error');
+        return;
+      }
+      // Soft-block: refuse save if any required MD field is still unmapped.
+      const mappedMd = new Set(completeMappings.map(m => m.medidesk_field));
+      const stillMissing = (state.mdFields || []).filter(f => f.required && !mappedMd.has(f.fieldId));
+      if (stillMissing.length > 0) {
+        const names = stillMissing.map(f => f.fieldId).join(', ');
+        setSaveStatus('error', `Brakuje mapowania wymaganych pól: ${names}. Użyj "Stała wartość" w banerze powyżej.`);
+        showToast('Uzupełnij wymagane pola', 'error');
         return;
       }
 
