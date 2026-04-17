@@ -197,13 +197,27 @@ async def create_new_integration(request: Request, _session=Depends(require_auth
     """Create a new FB→Medidesk integration with field mappings."""
     body = await request.json()
 
-    required = ["fb_page_id", "fb_page_name", "fb_page_token",
+    required = ["fb_page_id", "fb_page_name",
                  "fb_form_id", "fb_form_name",
                  "medidesk_form_id", "field_mappings"]
 
     for field in required:
         if field not in body:
             return JSONResponse(status_code=400, content={"error": f"Missing required field: {field}"})
+
+    # Securely retrieve the page token from FB API using user's access token
+    from app.fb_client import get_user_pages
+    user_token = _session.get("access_token", "")
+    pages = await get_user_pages(user_token)
+    
+    fb_page_token = None
+    for p in pages:
+        if p.page_id == body["fb_page_id"]:
+            fb_page_token = p.access_token
+            break
+            
+    if not fb_page_token:
+        return JSONResponse(status_code=403, content={"error": "User does not have access to this page (cannot retrieve page token)."})
 
     mappings = [
         FieldMapping(
@@ -217,7 +231,7 @@ async def create_new_integration(request: Request, _session=Depends(require_auth
     integration = create_integration(
         fb_page_id=body["fb_page_id"],
         fb_page_name=body["fb_page_name"],
-        fb_page_token=body["fb_page_token"],
+        fb_page_token=fb_page_token,
         fb_form_id=body["fb_form_id"],
         fb_form_name=body["fb_form_name"],
         fb_form_questions=body.get("fb_form_questions", []),
