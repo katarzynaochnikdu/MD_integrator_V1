@@ -345,7 +345,9 @@ async def facebook_login(request: Request):
 
     if not force:
         session = get_session_from_cookie(request)
-        if session and session.get("role") in ("user", "admin"):
+        # Any authenticated role with a usable session skips OAuth within 3h sliding TTL.
+        # "unregistered" intentionally NOT in this list — those users must re-auth to get approved.
+        if session and session.get("role") in ("user", "admin", "owner", "viewer"):
             audit_log("login_skip_oauth", session_id="", fb_user_id=session.get("fb_user_id", ""), request=request)
             return RedirectResponse(redirect_to)
 
