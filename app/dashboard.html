@@ -390,7 +390,6 @@
     .mapping-table .arrow { color: #27272a; text-align: center; width: 40px; }
     .mapping-table .fb-col { color: #60a5fa; }
     .mapping-table .md-col { color: #4ade80; }
-    .mapping-table .conf { color: #52525b; font-size: 0.7rem; text-align: right; }
 
     .lead-row { cursor: pointer; transition: background 0.1s; }
     .lead-row:hover { background: rgba(255,255,255,0.02); }
@@ -637,7 +636,7 @@
             <button class="btn btn-sm btn-outline" id="btn-edit-mappings" onclick="openEditMappingsModal()">✏️ Edytuj</button>
           </div>
           <table class="mapping-table" id="room-mappings">
-            <thead><tr><th>Pole Facebook</th><th></th><th>Pole Medidesk</th><th style="text-align:right">Pewność</th></tr></thead>
+            <thead><tr><th>Pole Facebook</th><th></th><th>Pole Medidesk</th></tr></thead>
             <tbody id="room-mappings-body"></tbody>
           </table>
         </div>
@@ -1193,9 +1192,8 @@
           <td class="fb-col">${m.fb_field}</td>
           <td class="arrow">→</td>
           <td class="md-col">${m.medidesk_field}</td>
-          <td class="conf">${Math.round((m.confidence || 0) * 100)}%</td>
         </tr>
-      `).join('') || '<tr><td colspan="4" style="color:#52525b;text-align:center;">Brak mapowań</td></tr>';
+      `).join('') || '<tr><td colspan="3" style="color:#52525b;text-align:center;">Brak mapowań</td></tr>';
 
       // Leads history
       const hasFailures = leads.some(l => l.status === 'failed');
