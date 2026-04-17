@@ -126,6 +126,40 @@ async def require_admin(request: Request) -> dict[str, Any]:
     return session
 
 
+async def require_facility(request: Request) -> dict[str, Any]:
+    """FastAPI dependency: require session + assigned facility.
+
+    Admin bypasses (may operate across facilities). Any other role without a
+    facility_id gets 403 "konto nie przypisane do placówki".
+    """
+    session = await require_auth(request)
+    if session.get("role") == "admin":
+        return session
+    if not session.get("facility_id"):
+        raise HTTPException(
+            status_code=403,
+            detail="Konto nie jest przypisane do żadnej placówki. Poczekaj na akceptację administratora.",
+        )
+    return session
+
+
+async def require_write_role(request: Request) -> dict[str, Any]:
+    """FastAPI dependency: require admin/owner/admin-level write access.
+
+    Blocks 'viewer' role from mutating. Admin bypasses.
+    Legacy role 'user' is accepted as owner-equivalent until session refresh.
+    """
+    session = await require_facility(request)
+    role = session.get("role", "")
+    # "user" = legacy role from pre-users-table era; treated as owner until re-login.
+    if role not in ("admin", "owner", "user"):
+        raise HTTPException(
+            status_code=403,
+            detail="Rola 'viewer' — brak uprawnień do edycji. Skontaktuj się z właścicielem placówki.",
+        )
+    return session
+
+
 # ─── Rate limiting (in-memory) ────────────────────────────────────
 
 _login_attempts: dict[str, list[float]] = {}  # ip -> [timestamp, ...]
@@ -364,13 +398,40 @@ async def _do_facebook_callback(request: Request):
 
     pages_data = [{"page_id": p.page_id, "name": p.name, "access_token": p.access_token} for p in pages]
 
-    # Look up facility by FB user ID
+    # Look up facility by FB user ID + upsert user record
     from app.integrations_store import get_facility_by_fb_user
+    from app.users_store import upsert_user, get_user
     fb_user_id = user.get("id", "")
+    fb_user_name = user.get("name", "")
+    fb_user_email = user.get("email", "")
     facility = get_facility_by_fb_user(fb_user_id)
     facility_id = facility.id if facility else ""
     facility_name = facility.name if facility else ""
-    role = "user" if facility else "unregistered"
+
+    # Upsert: refresh name/email + touch last_seen_at. Promote to 'owner' only on
+    # first-ever login of a facility owner (admin-managed role stays stable otherwise).
+    existing = get_user(fb_user_id)
+    if existing is None and facility:
+        user_record = upsert_user(
+            fb_user_id=fb_user_id, fb_user_name=fb_user_name, email=fb_user_email,
+            facility_id=facility.id, role="owner",
+        )
+    else:
+        user_record = upsert_user(
+            fb_user_id=fb_user_id, fb_user_name=fb_user_name, email=fb_user_email,
+        )
+
+    # Role derived from users table; "unregistered" if no facility assigned or user deactivated.
+    if user_record.active and user_record.facility_id:
+        role = user_record.role or "viewer"
+        if not facility_id:
+            facility_id = user_record.facility_id
+            # Refresh facility_name from assigned facility
+            from app.integrations_store import get_facility
+            fac = get_facility(user_record.facility_id)
+            facility_name = fac.name if fac else facility_name
+    else:
+        role = "unregistered"
 
     # Save unregistered attempt for admin to approve
     if role == "unregistered":
@@ -380,10 +441,10 @@ async def _do_facebook_callback(request: Request):
             conn = get_connection()
             conn.execute(
                 "INSERT OR REPLACE INTO pending_registrations (fb_user_id, fb_user_name, attempted_at) VALUES (?, ?, ?)",
-                (fb_user_id, user.get("name", ""), datetime.now(timezone.utc).isoformat()),
+                (fb_user_id, fb_user_name, datetime.now(timezone.utc).isoformat()),
             )
             conn.commit()
-            logger.info("Saved pending registration for FB user %s (%s)", fb_user_id, user.get("name", ""))
+            logger.info("Saved pending registration for FB user %s (%s)", fb_user_id, fb_user_name)
         except Exception:
             logger.warning("Failed to save pending registration", exc_info=True)
 

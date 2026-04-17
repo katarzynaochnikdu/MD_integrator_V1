@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from starlette.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.fb_auth import require_admin, require_auth, router as fb_auth_router
+from app.fb_auth import require_admin, require_auth, require_facility, require_write_role, router as fb_auth_router
 from app.fb_client import subscribe_page_to_webhooks
 from app.integrations_store import (
     Facility,
@@ -45,6 +45,47 @@ def _check_integration_access(integration, session: dict) -> bool:
         return True
     facility_id = session.get("facility_id", "")
     return bool(facility_id and integration.facility_id == facility_id)
+
+
+def _audit(request: Request, session: dict, action: str, *, integration_id: str = "",
+           before: dict | None = None, after: dict | None = None) -> None:
+    """Thin wrapper over users_store.log_integration_action with request context."""
+    try:
+        from app.users_store import log_integration_action
+        ip = request.client.host if request.client else ""
+        ua = request.headers.get("user-agent", "")
+        log_integration_action(
+            action=action,
+            integration_id=integration_id,
+            facility_id=session.get("facility_id", "") or "",
+            fb_user_id=session.get("fb_user_id", "") or (session.get("user") or {}).get("id", ""),
+            fb_user_name=(session.get("user") or {}).get("name", ""),
+            before=before,
+            after=after,
+            ip=ip,
+            user_agent=ua,
+        )
+    except Exception:
+        logger.warning("audit helper failed action=%s", action, exc_info=True)
+
+
+def _integration_snapshot(i) -> dict:
+    """Compact snapshot of integration for audit (token stripped)."""
+    return {
+        "id": i.id,
+        "active": bool(i.active),
+        "fb_page_id": i.fb_page_id,
+        "fb_page_name": i.fb_page_name,
+        "fb_form_id": i.fb_form_id,
+        "fb_form_name": i.fb_form_name,
+        "medidesk_form_id": i.medidesk_form_id,
+        "medidesk_form_name": i.medidesk_form_name,
+        "mappings_count": len(i.field_mappings),
+        "mappings": [
+            {"fb": m.fb_field, "md": m.medidesk_field} for m in i.field_mappings
+        ],
+        "facility_id": i.facility_id,
+    }
 
 app = FastAPI(title="Medidesk Integrator", version="2.0.0")
 
@@ -235,7 +276,7 @@ async def suggest_field_mapping(request: Request):
 
 
 @app.post("/api/integrations")
-async def create_new_integration(request: Request, _session=Depends(require_auth)):
+async def create_new_integration(request: Request, _session=Depends(require_write_role)):
     """Create a new FB→Medidesk integration with field mappings."""
     try:
         body = await request.json()
@@ -321,6 +362,8 @@ async def create_new_integration(request: Request, _session=Depends(require_auth
         logger.exception("POST /api/integrations: create_integration failed")
         return JSONResponse(status_code=500, content={"error": f"Nie udało się zapisać integracji: {e}"})
 
+    _audit(request, _session, "integration.create", integration_id=integration.id,
+           after=_integration_snapshot(integration))
     return {"status": "created", "integration": asdict(integration)}
 
 
@@ -370,38 +413,41 @@ async def get_integration_detail(integration_id: str, _session=Depends(require_a
 
 
 @app.put("/api/integrations/{integration_id}/mappings")
-async def update_mappings(integration_id: str, request: Request, _session=Depends(require_auth)):
+async def update_mappings(integration_id: str, request: Request, _session=Depends(require_write_role)):
     """Update field mappings for an existing integration."""
     body = await request.json()
     if "field_mappings" not in body:
         return JSONResponse(status_code=400, content={"error": "Missing field_mappings"})
 
     from app.integrations_store import FieldMapping, get_integration, update_integration
-    
+
     integration = get_integration(integration_id)
     if not integration:
         return JSONResponse(status_code=404, content={"error": "Integration not found"})
     if not _check_integration_access(integration, _session):
         return JSONResponse(status_code=403, content={"error": "Brak dostępu do tej integracji"})
-        
-    mappings = [
-        FieldMapping(
-            fb_field=m["fb_field"],
-            medidesk_field=m["medidesk_field"],
-            confidence=m.get("confidence", 0.0),
-        )
-        for m in body["field_mappings"]
-    ]
-    
+
+    before = _integration_snapshot(integration)
+
+    mappings = []
+    for m in body["field_mappings"]:
+        fb = (m.get("fb_field") or "").strip()
+        md = (m.get("medidesk_field") or "").strip()
+        if not fb or not md:
+            continue
+        mappings.append(FieldMapping(fb_field=fb, medidesk_field=md, confidence=float(m.get("confidence", 0.0) or 0.0)))
+
     updated = update_integration(integration_id, field_mappings=mappings)
-    
+    _audit(request, _session, "integration.update_mappings", integration_id=integration_id,
+           before=before, after=_integration_snapshot(updated))
+
     data = asdict(updated)
     data.pop("fb_page_token", None)
     return {"status": "success", "integration": data}
 
 
 @app.post("/api/integrations/{integration_id}/activate")
-async def activate_integration(integration_id: str, _session=Depends(require_auth)):
+async def activate_integration(integration_id: str, request: Request, _session=Depends(require_write_role)):
     """Activate an integration and subscribe page to webhooks."""
     integration = get_integration(integration_id)
     if not integration:
@@ -415,17 +461,20 @@ async def activate_integration(integration_id: str, _session=Depends(require_aut
     )
 
     if not success:
+        _audit(request, _session, "integration.activate_failed", integration_id=integration_id)
         return JSONResponse(
             status_code=502,
             content={"error": "Failed to subscribe page to webhooks. Check FB permissions."},
         )
 
-    updated = update_integration(integration_id, active=True)
+    update_integration(integration_id, active=True)
+    _audit(request, _session, "integration.activate", integration_id=integration_id,
+           after={"active": True})
     return {"status": "activated", "integration_id": integration_id}
 
 
 @app.post("/api/integrations/{integration_id}/deactivate")
-async def deactivate_integration(integration_id: str, _session=Depends(require_auth)):
+async def deactivate_integration(integration_id: str, request: Request, _session=Depends(require_write_role)):
     """Deactivate an integration."""
     integration = get_integration(integration_id)
     if not integration:
@@ -433,13 +482,18 @@ async def deactivate_integration(integration_id: str, _session=Depends(require_a
     if not _check_integration_access(integration, _session):
         return JSONResponse(status_code=403, content={"error": "Brak dostępu do tej integracji"})
     update_integration(integration_id, active=False)
+    _audit(request, _session, "integration.deactivate", integration_id=integration_id,
+           after={"active": False})
     return {"status": "deactivated", "integration_id": integration_id}
 
 
 @app.delete("/api/integrations/{integration_id}")
-async def remove_integration(integration_id: str, _session=Depends(require_admin)):
+async def remove_integration(integration_id: str, request: Request, _session=Depends(require_admin)):
     """Delete an integration."""
+    integration = get_integration(integration_id)
+    before = _integration_snapshot(integration) if integration else None
     if delete_integration(integration_id):
+        _audit(request, _session, "integration.delete", integration_id=integration_id, before=before)
         return {"status": "deleted"}
     return JSONResponse(status_code=404, content={"error": "Integration not found"})
 
@@ -459,6 +513,170 @@ async def global_stats(_session=Depends(require_auth)):
     stats["total_integrations"] = len(integrations)
     stats["recent_leads"] = get_recent_leads(limit=10)
     return stats
+
+
+# ─── Admin: users + audit timeline ────────────────────────────────
+
+
+@app.get("/api/admin/users")
+async def admin_list_users(_session=Depends(require_admin)):
+    """List all users across facilities (admin only)."""
+    from app.users_store import list_users
+    users = list_users()
+    # Enrich with facility name
+    facilities = {f.id: f.name for f in get_all_facilities()}
+    return {
+        "users": [
+            {
+                "fb_user_id": u.fb_user_id,
+                "fb_user_name": u.fb_user_name,
+                "email": u.email,
+                "facility_id": u.facility_id,
+                "facility_name": facilities.get(u.facility_id, ""),
+                "role": u.role,
+                "label": u.label,
+                "first_seen_at": u.first_seen_at,
+                "last_seen_at": u.last_seen_at,
+                "active": u.active,
+            }
+            for u in users
+        ]
+    }
+
+
+@app.get("/api/admin/users/facility/{facility_id}")
+async def admin_list_users_by_facility(facility_id: str, _session=Depends(require_facility)):
+    """List users of a given facility. Non-admin can only query own facility."""
+    from app.users_store import list_users
+    if _session.get("role") != "admin" and _session.get("facility_id") != facility_id:
+        return JSONResponse(status_code=403, content={"error": "Brak dostępu do tej placówki"})
+    users = list_users(facility_id=facility_id)
+    return {
+        "users": [
+            {
+                "fb_user_id": u.fb_user_id,
+                "fb_user_name": u.fb_user_name,
+                "email": u.email,
+                "role": u.role,
+                "label": u.label,
+                "last_seen_at": u.last_seen_at,
+                "active": u.active,
+            }
+            for u in users
+        ]
+    }
+
+
+@app.put("/api/admin/users/{fb_user_id}/role")
+async def admin_set_user_role(fb_user_id: str, request: Request, _session=Depends(require_admin)):
+    """Change role (owner/admin/viewer). Admin only."""
+    from app.users_store import set_role
+    body = await request.json()
+    role = body.get("role", "")
+    try:
+        ok = set_role(fb_user_id, role)
+    except ValueError as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
+    if not ok:
+        return JSONResponse(status_code=404, content={"error": "User not found"})
+    _audit(request, _session, "user.set_role", after={"fb_user_id": fb_user_id, "role": role})
+    return {"status": "ok"}
+
+
+@app.put("/api/admin/users/{fb_user_id}/facility")
+async def admin_assign_user_facility(fb_user_id: str, request: Request, _session=Depends(require_admin)):
+    """Assign user to a facility with a role (approves pending registration). Admin only."""
+    from app.users_store import set_facility
+    body = await request.json()
+    facility_id = body.get("facility_id", "")
+    role = body.get("role", "viewer")
+    if not facility_id:
+        return JSONResponse(status_code=400, content={"error": "facility_id required"})
+    try:
+        ok = set_facility(fb_user_id, facility_id, role)
+    except ValueError as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
+    if not ok:
+        return JSONResponse(status_code=404, content={"error": "User not found"})
+    # Remove from pending_registrations
+    try:
+        from app.db import get_connection
+        conn = get_connection()
+        conn.execute("DELETE FROM pending_registrations WHERE fb_user_id = ?", (fb_user_id,))
+        conn.commit()
+    except Exception:
+        logger.warning("Failed to clear pending_registrations", exc_info=True)
+    _audit(request, _session, "user.assign_facility",
+           after={"fb_user_id": fb_user_id, "facility_id": facility_id, "role": role})
+    return {"status": "ok"}
+
+
+@app.put("/api/admin/users/{fb_user_id}/label")
+async def admin_set_user_label(fb_user_id: str, request: Request, _session=Depends(require_admin)):
+    """Set admin-editable label (e.g. 'Aga — marketing'). Admin only."""
+    from app.users_store import set_label
+    body = await request.json()
+    label = body.get("label", "")
+    ok = set_label(fb_user_id, label)
+    if not ok:
+        return JSONResponse(status_code=404, content={"error": "User not found"})
+    return {"status": "ok"}
+
+
+@app.post("/api/admin/users/{fb_user_id}/deactivate")
+async def admin_deactivate_user(fb_user_id: str, request: Request, _session=Depends(require_admin)):
+    """Soft-disable user (blocks future logins; keeps audit trail)."""
+    from app.users_store import deactivate
+    ok = deactivate(fb_user_id)
+    if not ok:
+        return JSONResponse(status_code=404, content={"error": "User not found"})
+    _audit(request, _session, "user.deactivate", after={"fb_user_id": fb_user_id})
+    return {"status": "ok"}
+
+
+@app.get("/api/admin/audit")
+async def admin_audit_timeline(
+    facility_id: str = "",
+    fb_user_id: str = "",
+    limit: int = 100,
+    offset: int = 0,
+    _session=Depends(require_facility),
+):
+    """Audit timeline — who did what when. Non-admin sees only own facility."""
+    from app.users_store import list_audit
+    # Scope non-admin to their own facility
+    if _session.get("role") != "admin":
+        facility_id = _session.get("facility_id", "")
+        if not facility_id:
+            return {"events": []}
+    limit = max(1, min(500, int(limit or 100)))
+    events = list_audit(
+        facility_id=facility_id or None,
+        fb_user_id=fb_user_id or None,
+        limit=limit,
+        offset=max(0, int(offset or 0)),
+    )
+    return {"events": events, "limit": limit, "offset": offset}
+
+
+@app.get("/api/admin/pending")
+async def admin_list_pending(_session=Depends(require_admin)):
+    """List FB users who logged in but have no facility assigned (awaiting approval)."""
+    from app.db import get_connection
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT fb_user_id, fb_user_name, attempted_at FROM pending_registrations ORDER BY attempted_at DESC"
+    ).fetchall()
+    return {
+        "pending": [
+            {
+                "fb_user_id": r["fb_user_id"],
+                "fb_user_name": r["fb_user_name"] or "",
+                "attempted_at": r["attempted_at"],
+            }
+            for r in rows
+        ]
+    }
 
 
 @app.get("/api/stats/{integration_id}")
