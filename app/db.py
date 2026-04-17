@@ -140,6 +140,16 @@ def _init_tables(conn: sqlite3.Connection) -> None:
     except sqlite3.OperationalError:
         pass
 
+    # Migration: Auto-assign orphaned integrations to the only existing facility
+    try:
+        facs = conn.execute("SELECT id FROM facilities").fetchall()
+        if len(facs) == 1:
+            fac_id = facs[0]["id"]
+            conn.execute("UPDATE integrations SET facility_id = ? WHERE facility_id = '' OR facility_id IS NULL", (fac_id,))
+            conn.commit()
+    except Exception:
+        pass
+
 
 def migrate_from_json() -> None:
     """One-time migration: import existing JSON data into SQLite."""
