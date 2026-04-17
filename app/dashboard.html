@@ -1318,8 +1318,9 @@
       let mdOptions = `<option value="">— Nie mapuj —</option>`;
       const mdFieldsArr = editState.integration.medidesk_fields || [];
       mdFieldsArr.forEach(mdf => {
-        const sel = mdf.id === mdFieldId ? 'selected' : '';
-        mdOptions += `<option value="${mdf.id}" ${sel}>${mdf.name} (${mdf.type})</option>`;
+        const fieldKey = mdf.fieldId || mdf.id || mdf.name;
+        const sel = fieldKey === mdFieldId ? 'selected' : '';
+        mdOptions += `<option value="${fieldKey}" ${sel}>${mdf.name || fieldKey} ${mdf.type ? '(' + mdf.type + ')' : ''}</option>`;
       });
       
       let removeBtnHTML = '';
