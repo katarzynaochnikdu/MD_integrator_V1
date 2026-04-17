@@ -113,7 +113,7 @@ async def require_auth(request: Request) -> dict[str, Any]:
         or request.query_params.get("fb_session")
     )
     if session_id:
-        mem_session = _sessions.get(session_id)
+        mem_session = _get_valid_session(session_id)
         if mem_session and "user" in mem_session:
             return mem_session
 
@@ -151,6 +151,30 @@ def _check_rate_limit(ip: str) -> bool:
 
 # Also keep in-memory sessions for backward compatibility with setup wizard
 _sessions: dict[str, dict] = {}
+SESSION_TTL = 3 * 3600  # 3 hours in seconds
+
+
+def _cleanup_expired_sessions():
+    """Remove sessions older than SESSION_TTL."""
+    import time
+    now = time.time()
+    expired = [sid for sid, s in _sessions.items() if now - s.get("_created_at", 0) > SESSION_TTL]
+    for sid in expired:
+        del _sessions[sid]
+    if expired:
+        logger.info("Cleaned up %d expired sessions (%d remaining)", len(expired), len(_sessions))
+
+
+def _get_valid_session(session_id: str) -> dict | None:
+    """Get session if it exists and hasn't expired."""
+    import time
+    session = _sessions.get(session_id)
+    if not session:
+        return None
+    if time.time() - session.get("_created_at", 0) > SESSION_TTL:
+        del _sessions[session_id]
+        return None
+    return session
 
 
 # ─── Endpoints ─────────────────────────────────────────────────────
@@ -202,14 +226,19 @@ async def facebook_callback(request: Request):
     pages_data = [{"page_id": p.page_id, "name": p.name, "access_token": p.access_token} for p in pages]
 
     # Store in memory (for setup wizard backward compatibility)
+    import time
     session_id = user.get("id", "unknown")
     session_data = {
         "access_token": access_token,
         "user": user,
         "pages": pages_data,
         "role": "user",  # placówka
+        "_created_at": time.time(),
     }
     _sessions[session_id] = session_data
+
+    # Cleanup old sessions opportunistically
+    _cleanup_expired_sessions()
 
     # Determine redirect target
     if fb_state.startswith("/setup"):
@@ -226,7 +255,7 @@ async def facebook_callback(request: Request):
 @router.get("/session/{session_id}")
 async def get_session(session_id: str):
     """Get stored session data (user info, pages) — for setup wizard."""
-    session = _sessions.get(session_id)
+    session = _get_valid_session(session_id)
     if not session:
         return JSONResponse(status_code=404, content={"error": "Session not found or expired"})
     return {
