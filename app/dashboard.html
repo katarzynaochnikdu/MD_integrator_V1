@@ -795,12 +795,7 @@
 
     let currentRoomId = null;
 
-    // ─── Login tab switching ─────────────────────────────
-    function switchLoginTab(tab) {
-      const adminPanel = document.getElementById('login-admin-panel');
-      const facilityPanel = document.getElementById('login-facility-panel');
-      const tabAdmin = document.getElementById('tab-admin');
-      const tabFacility = document.getElementById('tab-facility');
+
     function setupRoleUI(role) {
       USER_ROLE = role;
       document.getElementById('sidebar-sub').textContent = role === 'admin' ? 'Panel administratora' : 'Panel placówki';
