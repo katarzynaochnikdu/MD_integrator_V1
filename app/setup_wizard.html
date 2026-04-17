@@ -997,7 +997,10 @@
       try {
         const resp = await fetch('/api/mapping/suggest', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Session-Id': state.sessionId || '',
+          },
           body: JSON.stringify({
             fb_questions: state.selectedForm.questions,
             medidesk_fields: state.mdFields,
@@ -1104,7 +1107,10 @@
           // 1. Create integration
           const createResp = await fetch('/api/integrations', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Session-Id': state.sessionId || '',
+            },
             body: JSON.stringify({
               fb_page_id: state.selectedPage.page_id,
               fb_page_name: state.selectedPage.name,
@@ -1124,7 +1130,10 @@
           const integrationId = createData.integration.id;
 
           // 2. Activate (subscribes webhook)
-          const actResp = await fetch(`/api/integrations/${integrationId}/activate`, { method: 'POST' });
+          const actResp = await fetch(`/api/integrations/${integrationId}/activate`, {
+            method: 'POST',
+            headers: { 'X-Session-Id': state.sessionId || '' },
+          });
           const actData = await actResp.json();
 
           if (!actResp.ok) {

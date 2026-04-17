@@ -101,11 +101,23 @@ def get_session_role(request: Request) -> str | None:
 
 
 async def require_auth(request: Request) -> dict[str, Any]:
-    """FastAPI dependency: require a valid session cookie."""
+    """FastAPI dependency: require a valid session (cookie or in-memory session ID)."""
+    # 1. Try signed cookie first
     session = get_session_from_cookie(request)
-    if not session or "user" not in session:
-        raise HTTPException(status_code=401, detail="Nie zalogowany")
-    return session
+    if session and "user" in session:
+        return session
+
+    # 2. Try in-memory session via header or query param
+    session_id = (
+        request.headers.get("X-Session-Id")
+        or request.query_params.get("fb_session")
+    )
+    if session_id:
+        mem_session = _sessions.get(session_id)
+        if mem_session and "user" in mem_session:
+            return mem_session
+
+    raise HTTPException(status_code=401, detail="Nie zalogowany")
 
 
 async def require_admin(request: Request) -> dict[str, Any]:
