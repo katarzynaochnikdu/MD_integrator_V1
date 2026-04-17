@@ -125,8 +125,25 @@ async def handle_webhook(request: Request):
 
             # Map FB fields to Medidesk fields (supports merge: multiple FB → one MD)
             fields_values: dict[str, str] = {}
-            for mapping in integration.field_mappings:
-                fb_value = lead.field_data.get(mapping.fb_field, "")
+
+            # Sort mappings so first_name comes before last_name (correct merge order)
+            sorted_mappings = sorted(
+                integration.field_mappings,
+                key=lambda m: (m.medidesk_field, m.fb_field),
+            )
+
+            for mapping in sorted_mappings:
+                fb_key = mapping.fb_field
+
+                # Virtual fields: inject computed values
+                if fb_key == "__fb_form_name__":
+                    fb_value = integration.fb_form_name
+                elif fb_key == "__fb_lead_date__":
+                    from datetime import datetime, timezone
+                    fb_value = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+                else:
+                    fb_value = lead.field_data.get(fb_key, "")
+
                 if fb_value:
                     if mapping.medidesk_field in fields_values:
                         # Merge: append with space (e.g., first_name + last_name)

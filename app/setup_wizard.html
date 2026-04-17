@@ -975,10 +975,22 @@
 
         state.mdFields.forEach(f => {
           const el = document.createElement('div');
-          el.style.cssText = 'display:flex;align-items:center;gap:0.6rem;padding:0.5rem 0;border-bottom:1px solid #1a1b25;';
+          el.style.cssText = 'display:flex;align-items:center;gap:0.6rem;padding:0.6rem 0.8rem;border-bottom:1px solid #1a1b25;';
+
+          const typeIcon = {
+            'TEXT_AREA': '📝', 'EMAIL': '✉️', 'PHONE': '📱',
+            'SELECT': '📋', 'CHECKBOX': '☑️', 'TEXT': '✏️',
+          }[f.type] || '📄';
+
+          const reqBadge = f.required
+            ? '<span style="font-size:0.6rem;color:#f59e0b;background:rgba(245,158,11,0.12);padding:0.1rem 0.35rem;border-radius:4px;font-weight:600;">wymagane</span>'
+            : '';
+
           el.innerHTML = `
-            <span class="field-chip md">${f.fieldId}</span>
-            <span style="font-size:0.75rem;color:#52525b;">${f.type}${f.required ? ' · wymagane' : ''}</span>
+            <span style="font-size:1rem;">${typeIcon}</span>
+            <span class="field-chip md" style="flex:1;">${f.fieldId}</span>
+            <span style="font-size:0.68rem;color:#52525b;font-weight:500;">${f.type}</span>
+            ${reqBadge}
           `;
           fieldsList.appendChild(el);
         });
@@ -1039,29 +1051,51 @@
       const fbQuestions = state.selectedForm.questions || [];
       const mdFieldIds = state.mdFields.map(f => f.fieldId);
 
+      // Virtual fields (always available)
+      const virtualFields = [
+        { key: '__fb_form_name__', label: '📋 Nazwa formularza FB', virtual: true },
+        { key: '__fb_lead_date__', label: '📅 Data wpłynięcia leada', virtual: true },
+      ];
+
       // Build mapped set
       const mappedFb = new Set(state.mappings.map(m => m.fb_field));
 
       // Render mapped fields first
       state.mappings.forEach(m => {
-        container.appendChild(createMappingRow(m.fb_field, m.medidesk_field, m.confidence));
+        const isVirtual = m.fb_field.startsWith('__');
+        container.appendChild(createMappingRow(m.fb_field, m.medidesk_field, m.confidence, isVirtual));
       });
 
       // Render unmapped FB fields
       fbQuestions.forEach(q => {
         const key = q.key || q.name || q.label || '';
         if (!mappedFb.has(key)) {
-          container.appendChild(createMappingRow(key, '', 0));
+          container.appendChild(createMappingRow(key, '', 0, false));
+        }
+      });
+
+      // Render unmapped virtual fields
+      virtualFields.forEach(vf => {
+        if (!mappedFb.has(vf.key)) {
+          container.appendChild(createMappingRow(vf.key, '', 0, true));
         }
       });
     }
 
-    function createMappingRow(fbField, mdField, confidence) {
+    function createMappingRow(fbField, mdField, confidence, isVirtual = false) {
       const row = document.createElement('div');
       row.className = 'mapping-row';
 
       const confClass = confidence >= 0.9 ? 'confidence-high' : confidence >= 0.6 ? 'confidence-med' : 'confidence-low';
       const confText = confidence > 0 ? Math.round(confidence * 100) + '%' : '—';
+
+      // Friendly label for virtual fields
+      const virtualLabels = {
+        '__fb_form_name__': '📋 Nazwa formularza',
+        '__fb_lead_date__': '📅 Data leada',
+      };
+      const displayName = isVirtual ? (virtualLabels[fbField] || fbField) : fbField;
+      const chipStyle = isVirtual ? 'border-style:dashed;opacity:0.8;' : '';
 
       // Build MD field <select>
       const options = ['<option value="">— nie mapuj —</option>'];
@@ -1075,7 +1109,7 @@
       const isMerge = mdField && mergeFields.length > 0;
 
       row.innerHTML = `
-        <span class="field-chip fb">${fbField}</span>
+        <span class="field-chip fb" style="${chipStyle}">${displayName}</span>
         <span class="mapping-arrow">↔</span>
         <select class="md-select" data-fb="${fbField}">${options.join('')}</select>
         ${isMerge ? '<span style="font-size:0.65rem;color:#f59e0b;font-weight:600;padding:0.1rem 0.4rem;background:rgba(245,158,11,0.12);border-radius:6px;">łączy</span>' : ''}
