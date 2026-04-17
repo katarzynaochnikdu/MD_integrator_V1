@@ -696,6 +696,17 @@
 
           <div id="facilities-list" style="font-size:0.82rem; color:#a1a1aa;"><em>Ładowanie...</em></div>
         </div>
+
+        <!-- Pending registrations -->
+        <div class="card" style="margin-top:1rem; display:none;" id="pending-card">
+          <div class="card-header">
+            <h3>🔔 Oczekujące na zatwierdzenie</h3>
+          </div>
+          <div style="font-size:0.72rem; color:#52525b; margin-bottom:0.5rem;">
+            Te konta próbowały się zalogować, ale nie mają przypisanej placówki. Zatwierdź je, podając nazwę.
+          </div>
+          <div id="pending-list" style="font-size:0.82rem; color:#a1a1aa;"></div>
+        </div>
       </div>
 
     </div>
@@ -1557,6 +1568,76 @@
         list.innerHTML = html;
       } catch (e) {
         document.getElementById('facilities-list').innerHTML = '<p style="color:#f87171;">Błąd: ' + e.message + '</p>';
+      }
+
+      // Also load pending registrations
+      loadPending();
+    }
+
+    async function loadPending() {
+      try {
+        const resp = await apiFetch('/api/facilities/pending');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const card = document.getElementById('pending-card');
+        const list = document.getElementById('pending-list');
+
+        if (!data.pending || data.pending.length === 0) {
+          card.style.display = 'none';
+          return;
+        }
+
+        card.style.display = 'block';
+
+        let html = '';
+        data.pending.forEach(p => {
+          const when = p.attempted_at ? new Date(p.attempted_at).toLocaleString('pl-PL') : '—';
+          html += `<div style="display:flex; align-items:center; gap:0.8rem; padding:0.6rem 0; border-bottom:1px solid #1e2030;">
+            <div style="flex:1;">
+              <div style="font-weight:600; color:#e4e4e7;">${p.fb_user_name || 'Brak nazwy'}</div>
+              <div style="font-family:monospace; font-size:0.7rem; color:#71717a;">ID: ${p.fb_user_id}</div>
+              <div style="font-size:0.68rem; color:#52525b;">Próba: ${when}</div>
+            </div>
+            <input type="text" id="pend-name-${p.fb_user_id}" placeholder="Nazwa placówki" value="${p.fb_user_name || ''}"
+              style="background:#090a0f; border:1px solid #27272a; color:#e4e4e7; padding:0.35rem 0.5rem; border-radius:5px; font-size:0.75rem; width:180px;" />
+            <button class="btn btn-sm btn-success" onclick="approvePending('${p.fb_user_id}')">✅ Zatwierdź</button>
+            <button class="btn btn-sm btn-outline" onclick="dismissPending('${p.fb_user_id}')" style="font-size:0.68rem;">✕</button>
+          </div>`;
+        });
+        list.innerHTML = html;
+      } catch {}
+    }
+
+    async function approvePending(fbUserId) {
+      const nameInput = document.getElementById('pend-name-' + fbUserId);
+      const name = nameInput ? nameInput.value.trim() : '';
+      if (!name) {
+        showToast('Podaj nazwę placówki przed zatwierdzeniem', 'error');
+        return;
+      }
+      try {
+        const resp = await apiFetch('/api/facilities/pending/' + fbUserId + '/approve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || 'Błąd zatwierdzania');
+        showToast('✅ Placówka "' + name + '" zatwierdzona!', 'success');
+        loadFacilities();
+      } catch (e) {
+        showToast(e.message, 'error');
+      }
+    }
+
+    async function dismissPending(fbUserId) {
+      if (!confirm('Odrzucić to zgłoszenie?')) return;
+      try {
+        await apiFetch('/api/facilities/pending/' + fbUserId, { method: 'DELETE' });
+        showToast('Zgłoszenie odrzucone', 'success');
+        loadPending();
+      } catch (e) {
+        showToast(e.message, 'error');
       }
     }
 

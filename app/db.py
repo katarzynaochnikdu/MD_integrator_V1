@@ -120,6 +120,12 @@ def _init_tables(conn: sqlite3.Connection) -> None:
             ON integrations(fb_page_id, fb_form_id);
         CREATE INDEX IF NOT EXISTS idx_facilities_fb_user
             ON facilities(fb_user_id);
+
+        CREATE TABLE IF NOT EXISTS pending_registrations (
+            fb_user_id TEXT PRIMARY KEY,
+            fb_user_name TEXT DEFAULT '',
+            attempted_at TEXT NOT NULL
+        );
     """)
 
     # Migration: add columns to existing tables if missing

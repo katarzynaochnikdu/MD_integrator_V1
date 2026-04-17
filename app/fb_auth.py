@@ -303,6 +303,21 @@ async def _do_facebook_callback(request: Request):
     facility_name = facility.name if facility else ""
     role = "user" if facility else "unregistered"
 
+    # Save unregistered attempt for admin to approve
+    if role == "unregistered":
+        try:
+            from app.db import get_connection
+            from datetime import datetime, timezone
+            conn = get_connection()
+            conn.execute(
+                "INSERT OR REPLACE INTO pending_registrations (fb_user_id, fb_user_name, attempted_at) VALUES (?, ?, ?)",
+                (fb_user_id, user.get("name", ""), datetime.now(timezone.utc).isoformat()),
+            )
+            conn.commit()
+            logger.info("Saved pending registration for FB user %s (%s)", fb_user_id, user.get("name", ""))
+        except Exception:
+            logger.warning("Failed to save pending registration", exc_info=True)
+
     # Save session to SQLite (survives restarts)
     import uuid
     session_id = uuid.uuid4().hex  # cryptographically random, not guessable

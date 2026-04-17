@@ -610,6 +610,61 @@ async def delete_existing_facility(facility_id: str, _session=Depends(require_ad
     return JSONResponse(status_code=404, content={"error": "Facility not found"})
 
 
+@app.get("/api/facilities/pending")
+async def list_pending_registrations(_session=Depends(require_admin)):
+    """List FB users who tried to log in but are not registered (admin only)."""
+    from app.db import get_connection
+    conn = get_connection()
+    rows = conn.execute("SELECT * FROM pending_registrations ORDER BY attempted_at DESC").fetchall()
+    return {
+        "pending": [
+            {"fb_user_id": r["fb_user_id"], "fb_user_name": r["fb_user_name"], "attempted_at": r["attempted_at"]}
+            for r in rows
+        ]
+    }
+
+
+@app.post("/api/facilities/pending/{fb_user_id}/approve")
+async def approve_pending(fb_user_id: str, request: Request, _session=Depends(require_admin)):
+    """Approve a pending registration — creates a facility and removes from pending."""
+    from app.db import get_connection
+    body = await request.json()
+    name = body.get("name", "").strip()
+
+    if not name:
+        return JSONResponse(status_code=400, content={"error": "Podaj nazwę placówki"})
+
+    # Check not already registered
+    from app.integrations_store import get_facility_by_fb_user
+    existing = get_facility_by_fb_user(fb_user_id)
+    if existing:
+        return JSONResponse(status_code=409, content={"error": f"Już zarejestrowana: {existing.name}"})
+
+    # Get pending info
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM pending_registrations WHERE fb_user_id = ?", (fb_user_id,)).fetchone()
+    fb_user_name = row["fb_user_name"] if row else ""
+
+    # Create facility
+    facility = create_facility(name=name, fb_user_id=fb_user_id, fb_user_name=fb_user_name)
+
+    # Remove from pending
+    conn.execute("DELETE FROM pending_registrations WHERE fb_user_id = ?", (fb_user_id,))
+    conn.commit()
+
+    return {"status": "approved", "facility": asdict(facility)}
+
+
+@app.delete("/api/facilities/pending/{fb_user_id}")
+async def dismiss_pending(fb_user_id: str, _session=Depends(require_admin)):
+    """Dismiss a pending registration without approving."""
+    from app.db import get_connection
+    conn = get_connection()
+    conn.execute("DELETE FROM pending_registrations WHERE fb_user_id = ?", (fb_user_id,))
+    conn.commit()
+    return {"status": "dismissed"}
+
+
 # ─── Pages: Demo, Setup Wizard, Dashboard & FB Compliance ────────
 
 
