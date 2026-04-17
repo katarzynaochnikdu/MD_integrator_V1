@@ -568,8 +568,14 @@
         <div id="user-role-badge"></div>
       </div>
     </div>
-    <div style="padding:0.5rem 1rem;border-top:1px solid #1e2030;" id="logout-area" style="display:none;">
-      <button class="btn btn-sm btn-outline" style="width:100%;" onclick="doLogout()">Wyloguj</button>
+    <div style="padding:0.5rem 1rem;border-top:1px solid #1e2030;" id="logout-area">
+      <button class="btn btn-sm btn-outline" style="width:100%; margin-bottom:0.4rem;" onclick="doLogout()">Wyloguj</button>
+      <button class="btn btn-sm btn-outline" style="width:100%; font-size:0.68rem;" id="btn-change-pw" onclick="togglePasswordChange()" style="display:none;">🔑 Zmień hasło admina</button>
+      <div id="pw-change-form" style="display:none; margin-top:0.5rem;">
+        <input type="password" id="pw-current" placeholder="Obecne hasło" style="width:100%; background:#090a0f; border:1px solid #27272a; color:#e4e4e7; padding:0.4rem 0.6rem; border-radius:5px; font-size:0.75rem; margin-bottom:0.3rem;" />
+        <input type="password" id="pw-new" placeholder="Nowe hasło (min. 6 znaków)" style="width:100%; background:#090a0f; border:1px solid #27272a; color:#e4e4e7; padding:0.4rem 0.6rem; border-radius:5px; font-size:0.75rem; margin-bottom:0.3rem;" />
+        <button class="btn btn-sm btn-success" style="width:100%; font-size:0.72rem;" onclick="changePassword()">Zapisz nowe hasło</button>
+      </div>
     </div>
   </aside>
 
@@ -857,9 +863,10 @@
       document.getElementById('user-role-badge').innerHTML = role === 'admin'
         ? '<span class="role-badge role-admin">ADMIN</span>'
         : '<span class="role-badge role-user">PLACÓWKA</span>';
-      // Show facilities nav only for admin
+      // Show facilities nav and password change only for admin
       if (role === 'admin') {
         document.getElementById('nav-facilities').style.display = 'flex';
+        document.getElementById('btn-change-pw').style.display = 'block';
       }
     }
 
@@ -1588,6 +1595,38 @@
         if (!resp.ok) throw new Error('Błąd usuwania');
         showToast('Placówka usunięta', 'success');
         loadFacilities();
+      } catch (e) {
+        showToast(e.message, 'error');
+      }
+    }
+    // ─── Password change ──────────────────────────────────
+    function togglePasswordChange() {
+      const form = document.getElementById('pw-change-form');
+      form.style.display = form.style.display === 'none' ? 'block' : 'none';
+    }
+
+    async function changePassword() {
+      const current = document.getElementById('pw-current').value;
+      const newPw = document.getElementById('pw-new').value;
+
+      if (!current || !newPw) {
+        showToast('Wypełnij oba pola', 'error');
+        return;
+      }
+
+      try {
+        const resp = await apiFetch('/api/admin/password', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ current_password: current, new_password: newPw }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || 'Błąd zmiany hasła');
+
+        showToast('✅ Hasło zmienione pomyślnie!', 'success');
+        document.getElementById('pw-current').value = '';
+        document.getElementById('pw-new').value = '';
+        togglePasswordChange();
       } catch (e) {
         showToast(e.message, 'error');
       }

@@ -62,6 +62,17 @@ async def startup_db():
     get_connection()  # ensure tables are created
     migrate_from_json()  # import existing JSON data (idempotent)
 
+    # Load persisted admin password (if changed via dashboard)
+    pw_path = Path(settings.data_dir) / ".admin_password"
+    if pw_path.exists():
+        try:
+            saved_pw = pw_path.read_text(encoding="utf-8").strip()
+            if saved_pw:
+                settings.admin_password = saved_pw
+                logger.info("Loaded admin password from persistent storage")
+        except Exception:
+            logger.warning("Failed to load admin password file", exc_info=True)
+
     # Start background token health check (every 24h)
     async def _token_check_loop():
         from app.alerting import check_and_alert
@@ -496,6 +507,36 @@ async def get_all_token_health(_session=Depends(require_admin)):
     from app.alerting import check_all_tokens
     results = await check_all_tokens()
     return {"tokens": results, "warn_days": settings.token_expiry_warn_days}
+
+
+# ─── Admin password management ───────────────────────────────────
+
+
+@app.put("/api/admin/password")
+async def change_admin_password(request: Request, _session=Depends(require_admin)):
+    """Change the admin password (persisted to disk)."""
+    body = await request.json()
+    current = body.get("current_password", "")
+    new_pw = body.get("new_password", "")
+
+    if not current or not new_pw:
+        return JSONResponse(status_code=400, content={"error": "Podaj obecne i nowe hasło"})
+
+    if current != settings.admin_password:
+        return JSONResponse(status_code=401, content={"error": "Obecne hasło jest nieprawidłowe"})
+
+    if len(new_pw) < 6:
+        return JSONResponse(status_code=400, content={"error": "Nowe hasło musi mieć co najmniej 6 znaków"})
+
+    # Persist to file so it survives restarts (env var stays as fallback)
+    pw_path = Path(settings.data_dir) / ".admin_password"
+    pw_path.write_text(new_pw, encoding="utf-8")
+
+    # Update in-memory setting
+    settings.admin_password = new_pw
+
+    logger.info("Admin password changed successfully")
+    return {"status": "ok", "message": "Hasło zostało zmienione"}
 
 
 # ─── Facility management (admin only) ────────────────────────────
