@@ -149,32 +149,65 @@ def _check_rate_limit(ip: str) -> bool:
     return True
 
 
-# Also keep in-memory sessions for backward compatibility with setup wizard
-_sessions: dict[str, dict] = {}
+# Session storage — SQLite-backed (survives restarts)
 SESSION_TTL = 3 * 3600  # 3 hours in seconds
+
+
+def _save_session(session_id: str, session_data: dict) -> None:
+    """Save session to SQLite."""
+    import json
+    import time
+    from app.db import get_connection
+    conn = get_connection()
+    conn.execute(
+        """INSERT OR REPLACE INTO sessions
+           (session_id, access_token, user_data, pages_data, role, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (
+            session_id,
+            session_data.get("access_token", ""),
+            json.dumps(session_data.get("user", {}), ensure_ascii=False),
+            json.dumps(session_data.get("pages", []), ensure_ascii=False),
+            session_data.get("role", "user"),
+            time.time(),
+        ),
+    )
+    conn.commit()
 
 
 def _cleanup_expired_sessions():
     """Remove sessions older than SESSION_TTL."""
     import time
-    now = time.time()
-    expired = [sid for sid, s in _sessions.items() if now - s.get("_created_at", 0) > SESSION_TTL]
-    for sid in expired:
-        del _sessions[sid]
-    if expired:
-        logger.info("Cleaned up %d expired sessions (%d remaining)", len(expired), len(_sessions))
+    from app.db import get_connection
+    conn = get_connection()
+    cutoff = time.time() - SESSION_TTL
+    result = conn.execute("DELETE FROM sessions WHERE created_at < ?", (cutoff,))
+    conn.commit()
+    if result.rowcount > 0:
+        logger.info("Cleaned up %d expired sessions", result.rowcount)
 
 
 def _get_valid_session(session_id: str) -> dict | None:
-    """Get session if it exists and hasn't expired."""
+    """Get session from SQLite if it exists and hasn't expired."""
+    import json
     import time
-    session = _sessions.get(session_id)
-    if not session:
+    from app.db import get_connection
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM sessions WHERE session_id = ?", (session_id,)
+    ).fetchone()
+    if not row:
         return None
-    if time.time() - session.get("_created_at", 0) > SESSION_TTL:
-        del _sessions[session_id]
+    if time.time() - row["created_at"] > SESSION_TTL:
+        conn.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
+        conn.commit()
         return None
-    return session
+    return {
+        "access_token": row["access_token"],
+        "user": json.loads(row["user_data"]),
+        "pages": json.loads(row["pages_data"]),
+        "role": row["role"],
+    }
 
 
 # ─── Endpoints ─────────────────────────────────────────────────────
@@ -225,17 +258,15 @@ async def facebook_callback(request: Request):
 
     pages_data = [{"page_id": p.page_id, "name": p.name, "access_token": p.access_token} for p in pages]
 
-    # Store in memory (for setup wizard backward compatibility)
-    import time
+    # Save session to SQLite (survives restarts)
     session_id = user.get("id", "unknown")
     session_data = {
         "access_token": access_token,
         "user": user,
         "pages": pages_data,
-        "role": "user",  # placówka
-        "_created_at": time.time(),
+        "role": "user",
     }
-    _sessions[session_id] = session_data
+    _save_session(session_id, session_data)
 
     # Cleanup old sessions opportunistically
     _cleanup_expired_sessions()

@@ -76,6 +76,15 @@ def _init_tables(conn: sqlite3.Connection) -> None:
             retried INTEGER DEFAULT 0
         );
 
+        CREATE TABLE IF NOT EXISTS sessions (
+            session_id TEXT PRIMARY KEY,
+            access_token TEXT NOT NULL,
+            user_data TEXT NOT NULL DEFAULT '{}',
+            pages_data TEXT NOT NULL DEFAULT '[]',
+            role TEXT NOT NULL DEFAULT 'user',
+            created_at REAL NOT NULL
+        );
+
         CREATE INDEX IF NOT EXISTS idx_lead_events_integration
             ON lead_events(integration_id);
         CREATE INDEX IF NOT EXISTS idx_lead_events_status
