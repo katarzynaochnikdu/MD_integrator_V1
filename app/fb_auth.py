@@ -259,7 +259,8 @@ async def facebook_callback(request: Request):
     pages_data = [{"page_id": p.page_id, "name": p.name, "access_token": p.access_token} for p in pages]
 
     # Save session to SQLite (survives restarts)
-    session_id = user.get("id", "unknown")
+    import uuid
+    session_id = uuid.uuid4().hex  # cryptographically random, not guessable
     session_data = {
         "access_token": access_token,
         "user": user,
