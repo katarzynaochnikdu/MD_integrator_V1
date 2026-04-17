@@ -63,6 +63,15 @@ class FieldMapping:
 
 
 @dataclass
+class Facility:
+    id: str
+    name: str
+    fb_user_id: str
+    fb_user_name: str = ""
+    created_at: str = ""
+
+
+@dataclass
 class Integration:
     id: str
     fb_page_id: str
@@ -78,6 +87,7 @@ class Integration:
     active: bool = False
     created_at: str = ""
     updated_at: str = ""
+    facility_id: str = ""
 
 
 def _row_to_integration(row) -> Integration:
@@ -97,6 +107,7 @@ def _row_to_integration(row) -> Integration:
         active=bool(row["active"]),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
+        facility_id=row["facility_id"] if "facility_id" in row.keys() else "",
     )
 
 
@@ -111,6 +122,7 @@ def create_integration(
     medidesk_form_name: str,
     medidesk_fields: list[dict[str, Any]],
     field_mappings: list[FieldMapping],
+    facility_id: str = "",
 ) -> Integration:
     """Create and save a new integration."""
     now = datetime.now(timezone.utc).isoformat()
@@ -130,6 +142,7 @@ def create_integration(
         active=False,
         created_at=now,
         updated_at=now,
+        facility_id=facility_id,
     )
     conn = get_connection()
     conn.execute(
@@ -137,8 +150,8 @@ def create_integration(
            (id, fb_page_id, fb_page_name, fb_page_token,
             fb_form_id, fb_form_name, fb_form_questions,
             medidesk_form_id, medidesk_form_name, medidesk_fields,
-            field_mappings, active, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            field_mappings, active, created_at, updated_at, facility_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             integration_id, fb_page_id, fb_page_name,
             _encrypt_token(fb_page_token),
@@ -147,11 +160,11 @@ def create_integration(
             medidesk_form_id, medidesk_form_name,
             json.dumps(medidesk_fields, ensure_ascii=False),
             json.dumps([asdict(m) for m in field_mappings], ensure_ascii=False),
-            0, now, now,
+            0, now, now, facility_id,
         ),
     )
     conn.commit()
-    logger.info("Created integration %s (FB form %s → MD form %s)", integration_id, fb_form_id, medidesk_form_id)
+    logger.info("Created integration %s (FB form %s → MD form %s, facility=%s)", integration_id, fb_form_id, medidesk_form_id, facility_id)
     return integration
 
 
@@ -216,7 +229,7 @@ def update_integration(integration_id: str, **updates: Any) -> Integration | Non
     params: list[Any] = [now]
 
     simple_fields = {"fb_page_id", "fb_page_name", "fb_form_id", "fb_form_name",
-                     "medidesk_form_id", "medidesk_form_name"}
+                     "medidesk_form_id", "medidesk_form_name", "facility_id"}
 
     for k, v in updates.items():
         if k == "active":
@@ -247,5 +260,73 @@ def update_integration(integration_id: str, **updates: Any) -> Integration | Non
 def delete_integration(integration_id: str) -> bool:
     conn = get_connection()
     cursor = conn.execute("DELETE FROM integrations WHERE id = ?", (integration_id,))
+    conn.commit()
+    return cursor.rowcount > 0
+
+
+def get_integrations_by_facility(facility_id: str) -> list[Integration]:
+    """Get all integrations belonging to a specific facility."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM integrations WHERE facility_id = ? ORDER BY created_at DESC",
+        (facility_id,),
+    ).fetchall()
+    return [_row_to_integration(r) for r in rows]
+
+
+# ─── Facility CRUD ─────────────────────────────────────────────────
+
+
+def create_facility(name: str, fb_user_id: str, fb_user_name: str = "") -> Facility:
+    """Register a new facility."""
+    now = datetime.now(timezone.utc).isoformat()
+    facility_id = str(uuid.uuid4())
+    conn = get_connection()
+    conn.execute(
+        "INSERT INTO facilities (id, name, fb_user_id, fb_user_name, created_at) VALUES (?, ?, ?, ?, ?)",
+        (facility_id, name, fb_user_id, fb_user_name, now),
+    )
+    conn.commit()
+    logger.info("Created facility %s (name=%s, fb_user=%s)", facility_id, name, fb_user_id)
+    return Facility(id=facility_id, name=name, fb_user_id=fb_user_id, fb_user_name=fb_user_name, created_at=now)
+
+
+def get_facility(facility_id: str) -> Facility | None:
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM facilities WHERE id = ?", (facility_id,)).fetchone()
+    if not row:
+        return None
+    return Facility(id=row["id"], name=row["name"], fb_user_id=row["fb_user_id"], fb_user_name=row["fb_user_name"], created_at=row["created_at"])
+
+
+def get_facility_by_fb_user(fb_user_id: str) -> Facility | None:
+    """Look up a facility by its Facebook user ID."""
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM facilities WHERE fb_user_id = ?", (fb_user_id,)).fetchone()
+    if not row:
+        return None
+    return Facility(id=row["id"], name=row["name"], fb_user_id=row["fb_user_id"], fb_user_name=row["fb_user_name"], created_at=row["created_at"])
+
+
+def get_all_facilities() -> list[Facility]:
+    conn = get_connection()
+    rows = conn.execute("SELECT * FROM facilities ORDER BY created_at DESC").fetchall()
+    return [Facility(id=r["id"], name=r["name"], fb_user_id=r["fb_user_id"], fb_user_name=r["fb_user_name"], created_at=r["created_at"]) for r in rows]
+
+
+def update_facility(facility_id: str, name: str | None = None) -> Facility | None:
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM facilities WHERE id = ?", (facility_id,)).fetchone()
+    if not row:
+        return None
+    if name is not None:
+        conn.execute("UPDATE facilities SET name = ? WHERE id = ?", (name, facility_id))
+        conn.commit()
+    return get_facility(facility_id)
+
+
+def delete_facility(facility_id: str) -> bool:
+    conn = get_connection()
+    cursor = conn.execute("DELETE FROM facilities WHERE id = ?", (facility_id,))
     conn.commit()
     return cursor.rowcount > 0

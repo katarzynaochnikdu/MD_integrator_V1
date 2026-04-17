@@ -171,14 +171,16 @@ def _save_session(session_id: str, session_data: dict) -> None:
     conn = get_connection()
     conn.execute(
         """INSERT OR REPLACE INTO sessions
-           (session_id, access_token, user_data, pages_data, role, created_at)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+           (session_id, access_token, user_data, pages_data, role, facility_id, facility_name, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             session_id,
             encrypted_token,
             json.dumps(session_data.get("user", {}), ensure_ascii=False),
             json.dumps(pages_safe, ensure_ascii=False),
             session_data.get("role", "user"),
+            session_data.get("facility_id", ""),
+            session_data.get("facility_name", ""),
             time.time(),
         ),
     )
@@ -231,6 +233,8 @@ def _get_valid_session(session_id: str) -> dict | None:
         "user": json.loads(row["user_data"]),
         "pages": json.loads(row["pages_data"]),
         "role": row["role"],
+        "facility_id": row["facility_id"] if "facility_id" in row.keys() else "",
+        "facility_name": row["facility_name"] if "facility_name" in row.keys() else "",
     }
 
 
@@ -291,6 +295,14 @@ async def _do_facebook_callback(request: Request):
 
     pages_data = [{"page_id": p.page_id, "name": p.name, "access_token": p.access_token} for p in pages]
 
+    # Look up facility by FB user ID
+    from app.integrations_store import get_facility_by_fb_user
+    fb_user_id = user.get("id", "")
+    facility = get_facility_by_fb_user(fb_user_id)
+    facility_id = facility.id if facility else ""
+    facility_name = facility.name if facility else ""
+    role = "user" if facility else "unregistered"
+
     # Save session to SQLite (survives restarts)
     import uuid
     session_id = uuid.uuid4().hex  # cryptographically random, not guessable
@@ -298,7 +310,9 @@ async def _do_facebook_callback(request: Request):
         "access_token": access_token,
         "user": user,
         "pages": pages_data,
-        "role": "user",
+        "role": role,
+        "facility_id": facility_id,
+        "facility_name": facility_name,
     }
     _save_session(session_id, session_data)
 
@@ -311,7 +325,7 @@ async def _do_facebook_callback(request: Request):
     elif fb_state == "/" or fb_state == "":
         redirect_url = f"/?fb_session={session_id}"
     else:
-        redirect_url = "/dashboard"
+        redirect_url = f"/dashboard?fb_session={session_id}"
 
     # Set cookie (stores only session_id, not sensitive data) and redirect
     response = RedirectResponse(redirect_url)
@@ -341,6 +355,8 @@ async def get_current_user_endpoint(request: Request):
         "user": session["user"],
         "pages": session.get("pages", []),
         "role": session.get("role", "user"),
+        "facility_id": session.get("facility_id", ""),
+        "facility_name": session.get("facility_name", ""),
     }
 
 

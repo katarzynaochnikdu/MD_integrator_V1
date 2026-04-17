@@ -13,11 +13,18 @@ from app.config import settings
 from app.fb_auth import require_admin, require_auth, router as fb_auth_router
 from app.fb_client import subscribe_page_to_webhooks
 from app.integrations_store import (
+    Facility,
     FieldMapping,
+    create_facility,
     create_integration,
+    delete_facility,
     delete_integration,
+    get_all_facilities,
     get_all_integrations,
+    get_facility,
     get_integration,
+    get_integrations_by_facility,
+    update_facility,
     update_integration,
 )
 from app.mapping_ai import MappingSuggestion, suggest_mapping
@@ -239,6 +246,7 @@ async def create_new_integration(request: Request, _session=Depends(require_auth
         medidesk_form_name=body.get("medidesk_form_name", ""),
         medidesk_fields=body.get("medidesk_fields", []),
         field_mappings=mappings,
+        facility_id=_session.get("facility_id", ""),
     )
 
     return {"status": "created", "integration": asdict(integration)}
@@ -246,8 +254,17 @@ async def create_new_integration(request: Request, _session=Depends(require_auth
 
 @app.get("/api/integrations")
 async def list_integrations(_session=Depends(require_auth)):
-    """List all integrations (tokens hidden)."""
-    integrations = get_all_integrations()
+    """List all integrations (tokens hidden). Filtered by facility for non-admin."""
+    role = _session.get("role", "user")
+    facility_id = _session.get("facility_id", "")
+
+    if role == "admin":
+        integrations = get_all_integrations()
+    elif facility_id:
+        integrations = get_integrations_by_facility(facility_id)
+    else:
+        integrations = []  # unregistered user sees nothing
+
     return {
         "integrations": [
             {
@@ -260,6 +277,7 @@ async def list_integrations(_session=Depends(require_auth)):
                 "active": i.active,
                 "mappings_count": len(i.field_mappings),
                 "created_at": i.created_at,
+                "facility_id": i.facility_id,
             }
             for i in integrations
         ]
@@ -478,6 +496,77 @@ async def get_all_token_health(_session=Depends(require_admin)):
     from app.alerting import check_all_tokens
     results = await check_all_tokens()
     return {"tokens": results, "warn_days": settings.token_expiry_warn_days}
+
+
+# ─── Facility management (admin only) ────────────────────────────
+
+
+@app.get("/api/facilities")
+async def list_facilities(_session=Depends(require_admin)):
+    """List all registered facilities (admin only)."""
+    facilities = get_all_facilities()
+    # Count integrations per facility
+    all_integrations = get_all_integrations()
+    facility_counts = {}
+    for i in all_integrations:
+        fid = i.facility_id or "__unassigned__"
+        facility_counts[fid] = facility_counts.get(fid, 0) + 1
+
+    return {
+        "facilities": [
+            {
+                "id": f.id,
+                "name": f.name,
+                "fb_user_id": f.fb_user_id,
+                "fb_user_name": f.fb_user_name,
+                "created_at": f.created_at,
+                "integrations_count": facility_counts.get(f.id, 0),
+            }
+            for f in facilities
+        ],
+        "unassigned_count": facility_counts.get("__unassigned__", 0),
+    }
+
+
+@app.post("/api/facilities")
+async def create_new_facility(request: Request, _session=Depends(require_admin)):
+    """Register a new facility (admin only)."""
+    body = await request.json()
+    name = body.get("name", "").strip()
+    fb_user_id = body.get("fb_user_id", "").strip()
+
+    if not name or not fb_user_id:
+        return JSONResponse(status_code=400, content={"error": "Wymagane: name i fb_user_id"})
+
+    from app.integrations_store import get_facility_by_fb_user
+    existing = get_facility_by_fb_user(fb_user_id)
+    if existing:
+        return JSONResponse(status_code=409, content={"error": f"Placówka z tym FB user ID już istnieje: {existing.name}"})
+
+    facility = create_facility(
+        name=name,
+        fb_user_id=fb_user_id,
+        fb_user_name=body.get("fb_user_name", ""),
+    )
+    return {"status": "created", "facility": asdict(facility)}
+
+
+@app.put("/api/facilities/{facility_id}")
+async def update_existing_facility(facility_id: str, request: Request, _session=Depends(require_admin)):
+    """Update facility name (admin only)."""
+    body = await request.json()
+    updated = update_facility(facility_id, name=body.get("name"))
+    if not updated:
+        return JSONResponse(status_code=404, content={"error": "Facility not found"})
+    return {"status": "updated", "facility": asdict(updated)}
+
+
+@app.delete("/api/facilities/{facility_id}")
+async def delete_existing_facility(facility_id: str, _session=Depends(require_admin)):
+    """Delete a facility (admin only)."""
+    if delete_facility(facility_id):
+        return {"status": "deleted"}
+    return JSONResponse(status_code=404, content={"error": "Facility not found"})
 
 
 # ─── Pages: Demo, Setup Wizard, Dashboard & FB Compliance ────────

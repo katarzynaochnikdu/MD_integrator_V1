@@ -513,10 +513,26 @@
       <h2>Medidesk Integrator</h2>
       <div class="sub">Zaloguj się do panelu</div>
       <div class="login-error" id="login-error" style="display:none;"></div>
-      <input class="login-input" id="admin-password" type="password" placeholder="Hasło administratora" onkeydown="if(event.key==='Enter')adminLogin()" />
-      <button class="login-btn login-btn-admin" onclick="adminLogin()">Zaloguj jako Admin</button>
-      <div class="login-divider">lub</div>
-      <button class="login-btn login-btn-fb" onclick="location.href='/auth/facebook'">🟦 Zaloguj przez Facebook (Placówka)</button>
+
+      <!-- Tab switcher -->
+      <div style="display:flex; gap:0; margin-bottom:1rem; border:1px solid #27272a; border-radius:8px; overflow:hidden;">
+        <button id="tab-admin" onclick="switchLoginTab('admin')" style="flex:1; padding:0.5rem; background:#1e2030; color:#a1a1aa; border:none; cursor:pointer; font-size:0.82rem; font-weight:600; transition:all 0.15s;">Admin</button>
+        <button id="tab-facility" onclick="switchLoginTab('facility')" style="flex:1; padding:0.5rem; background:transparent; color:#52525b; border:none; cursor:pointer; font-size:0.82rem; font-weight:600; transition:all 0.15s;">Placówka</button>
+      </div>
+
+      <!-- Admin login -->
+      <div id="login-admin-panel">
+        <input class="login-input" id="admin-password" type="password" placeholder="Hasło administratora" onkeydown="if(event.key==='Enter')adminLogin()" />
+        <button class="login-btn login-btn-admin" onclick="adminLogin()">Zaloguj jako Admin</button>
+      </div>
+
+      <!-- Facility login -->
+      <div id="login-facility-panel" style="display:none;">
+        <button class="login-btn login-btn-fb" onclick="location.href='/auth/facebook?redirect=/dashboard'">Zaloguj się przez Facebook</button>
+        <div style="margin-top:0.8rem; font-size:0.72rem; color:#52525b; line-height:1.5;">
+          💡 Jeśli Facebook wyświetli ekran <em>„Połącz ponownie”</em> — kliknij ten przycisk. Twoje konto zostanie rozpoznane automatycznie.
+        </div>
+      </div>
     </div>
   </div>
 
@@ -535,6 +551,9 @@
       </div>
       <div class="nav-item" data-section="room" id="nav-room" onclick="showSection('room')" style="display:none;">
         <span class="icon">🏠</span> <span id="nav-room-label">Połączenie</span>
+      </div>
+      <div class="nav-item" data-section="facilities" id="nav-facilities" onclick="showSection('facilities')" style="display:none;">
+        <span class="icon">🏥</span> <span>Placówki</span>
       </div>
       <div class="nav-divider"></div>
       <div class="nav-item" onclick="location.href='/setup'">
@@ -648,6 +667,31 @@
         </div>
       </div>
 
+      <!-- Section: Facilities (admin only) -->
+      <div class="section" id="sec-facilities">
+        <div class="card">
+          <div class="card-header">
+            <h3>Zarejestrowane placówki</h3>
+            <button class="btn btn-sm btn-primary" id="btn-add-facility" onclick="toggleAddFacility()">➕ Dodaj</button>
+          </div>
+
+          <!-- Add facility form (hidden) -->
+          <div id="add-facility-form" style="display:none; padding:1rem; margin-bottom:1rem; background:#111218; border:1px solid #1e2030; border-radius:10px;">
+            <div style="display:flex; flex-direction:column; gap:0.6rem;">
+              <input type="text" id="fac-name" placeholder="Nazwa placówki (np. Klinika Dental)" style="background:#090a0f; border:1px solid #27272a; color:#e4e4e7; padding:0.5rem 0.7rem; border-radius:6px; font-size:0.82rem;" />
+              <input type="text" id="fac-fb-user-id" placeholder="Facebook User ID (np. 10229876543210)" style="background:#090a0f; border:1px solid #27272a; color:#e4e4e7; padding:0.5rem 0.7rem; border-radius:6px; font-size:0.82rem;" />
+              <input type="text" id="fac-fb-user-name" placeholder="Nazwa użytkownika FB (opcjonalnie)" style="background:#090a0f; border:1px solid #27272a; color:#e4e4e7; padding:0.5rem 0.7rem; border-radius:6px; font-size:0.82rem;" />
+              <div style="display:flex; gap:0.5rem; justify-content:flex-end;">
+                <button class="btn btn-outline btn-sm" onclick="toggleAddFacility()">Anuluj</button>
+                <button class="btn btn-success btn-sm" onclick="saveFacility()">💾 Zapisz</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="facilities-list" style="font-size:0.82rem; color:#a1a1aa;"><em>Ładowanie...</em></div>
+        </div>
+      </div>
+
     </div>
   </div>
 
@@ -754,6 +798,31 @@
 
     let currentRoomId = null;
 
+    // ─── Login tab switching ─────────────────────────────
+    function switchLoginTab(tab) {
+      const adminPanel = document.getElementById('login-admin-panel');
+      const facilityPanel = document.getElementById('login-facility-panel');
+      const tabAdmin = document.getElementById('tab-admin');
+      const tabFacility = document.getElementById('tab-facility');
+      document.getElementById('login-error').style.display = 'none';
+
+      if (tab === 'admin') {
+        adminPanel.style.display = 'block';
+        facilityPanel.style.display = 'none';
+        tabAdmin.style.background = '#1e2030';
+        tabAdmin.style.color = '#a1a1aa';
+        tabFacility.style.background = 'transparent';
+        tabFacility.style.color = '#52525b';
+      } else {
+        adminPanel.style.display = 'none';
+        facilityPanel.style.display = 'block';
+        tabFacility.style.background = '#1e2030';
+        tabFacility.style.color = '#a1a1aa';
+        tabAdmin.style.background = 'transparent';
+        tabAdmin.style.color = '#52525b';
+      }
+    }
+
     // ─── Login ───────────────────────────────────────────
     async function adminLogin() {
       if (DEMO) {
@@ -788,6 +857,10 @@
       document.getElementById('user-role-badge').innerHTML = role === 'admin'
         ? '<span class="role-badge role-admin">ADMIN</span>'
         : '<span class="role-badge role-user">PLACÓWKA</span>';
+      // Show facilities nav only for admin
+      if (role === 'admin') {
+        document.getElementById('nav-facilities').style.display = 'flex';
+      }
     }
 
     async function doLogout() {
@@ -796,7 +869,7 @@
     }
 
     // ─── Section nav ────────────────────────────────────
-    const titles = { overview: 'Przegląd', integrations: 'Integracje', room: 'Połączenie' };
+    const titles = { overview: 'Przegląd', integrations: 'Integracje', room: 'Połączenie', facilities: 'Placówki' };
 
     function showSection(name) {
       document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
@@ -805,6 +878,7 @@
         n.classList.toggle('active', n.dataset.section === name);
       });
       document.getElementById('section-title').textContent = titles[name] || name;
+      if (name === 'facilities') loadFacilities();
     }
 
     // ─── Init ───────────────────────────────────────────
@@ -824,10 +898,28 @@
           const resp = await fetch('/auth/facebook/me');
           if (resp.ok) {
             const data = await resp.json();
+            const role = data.role || 'user';
+            
+            if (role === 'unregistered') {
+              // User logged in with FB but is not registered as a facility
+              setUser(data.user);
+              const errEl = document.getElementById('login-error');
+              errEl.innerHTML = '⚠️ Twoje konto Facebook (<strong>' + (data.user.name || '') + '</strong>, ID: ' + (data.user.id || '') + ') nie jest zarejestrowane jako placówka. Skontaktuj się z administratorem Medidesk.';
+              errEl.style.display = 'block';
+              switchLoginTab('facility');
+              // Stay on login overlay
+              return;
+            }
+            
             setUser(data.user);
-            USER_ROLE = data.role || 'user';
+            USER_ROLE = role;
             USER_PAGES = (data.pages || []).map(p => p.page_id);
             hideLogin(USER_ROLE);
+            
+            // Show facility name in sidebar for non-admin
+            if (role === 'user' && data.facility_name) {
+              document.getElementById('sidebar-sub').textContent = data.facility_name;
+            }
           }
           // If not logged in, login overlay stays visible
         } catch {}
@@ -1399,6 +1491,105 @@
       } finally {
         btn.disabled = false;
         btn.innerHTML = '💾 Zapisz zmiany';
+      }
+    }
+
+    // ─── Facilities Management (admin only) ──────────────────────────
+    function toggleAddFacility() {
+      const form = document.getElementById('add-facility-form');
+      form.style.display = form.style.display === 'none' ? 'block' : 'none';
+    }
+
+    async function loadFacilities() {
+      if (DEMO) {
+        document.getElementById('facilities-list').innerHTML = '<p style="color:#52525b; padding:0.5rem;">DEMO: Brak danych placówek</p>';
+        return;
+      }
+      try {
+        const resp = await apiFetch('/api/facilities');
+        if (!resp.ok) {
+          document.getElementById('facilities-list').innerHTML = '<p style="color:#f87171; padding:0.5rem;">Brak uprawnień do wyświetlenia placówek.</p>';
+          return;
+        }
+        const data = await resp.json();
+        const list = document.getElementById('facilities-list');
+
+        if (data.facilities.length === 0 && !data.unassigned_count) {
+          list.innerHTML = '<p style="color:#52525b; padding:0.8rem; text-align:center;">Brak zarejestrowanych placówek. Kliknij "Dodaj" aby zarejestrować pierwszą.</p>';
+          return;
+        }
+
+        let html = '<table style="width:100%;"><thead><tr>' +
+          '<th>Nazwa</th><th>FB User ID</th><th>FB Imię</th><th>Integracje</th><th>Data</th><th></th>' +
+          '</tr></thead><tbody>';
+
+        data.facilities.forEach(f => {
+          const date = f.created_at ? new Date(f.created_at).toLocaleDateString('pl-PL') : '—';
+          html += `<tr>
+            <td style="font-weight:600;">${f.name}</td>
+            <td style="font-family:monospace; font-size:0.72rem; color:#71717a;">${f.fb_user_id}</td>
+            <td>${f.fb_user_name || '—'}</td>
+            <td><span class="badge badge-sent">${f.integrations_count}</span></td>
+            <td style="color:#52525b;">${date}</td>
+            <td><button class="btn btn-sm btn-danger" onclick="deleteFac('${f.id}', '${f.name}')">🗑</button></td>
+          </tr>`;
+        });
+
+        if (data.unassigned_count > 0) {
+          html += `<tr style="opacity:0.6;">
+            <td style="font-style:italic;">Nieprzypisane</td>
+            <td colspan="2" style="color:#52525b;">Integracje bez placówki</td>
+            <td><span class="badge badge-received">${data.unassigned_count}</span></td>
+            <td colspan="2"></td>
+          </tr>`;
+        }
+
+        html += '</tbody></table>';
+        list.innerHTML = html;
+      } catch (e) {
+        document.getElementById('facilities-list').innerHTML = '<p style="color:#f87171;">Błąd: ' + e.message + '</p>';
+      }
+    }
+
+    async function saveFacility() {
+      const name = document.getElementById('fac-name').value.trim();
+      const fbUserId = document.getElementById('fac-fb-user-id').value.trim();
+      const fbUserName = document.getElementById('fac-fb-user-name').value.trim();
+
+      if (!name || !fbUserId) {
+        showToast('Podaj nazwę placówki i Facebook User ID.', 'error');
+        return;
+      }
+
+      try {
+        const resp = await apiFetch('/api/facilities', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, fb_user_id: fbUserId, fb_user_name: fbUserName }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || 'Błąd tworzenia placówki');
+
+        showToast('Placówka "' + name + '" zarejestrowana!', 'success');
+        document.getElementById('fac-name').value = '';
+        document.getElementById('fac-fb-user-id').value = '';
+        document.getElementById('fac-fb-user-name').value = '';
+        toggleAddFacility();
+        loadFacilities();
+      } catch (e) {
+        showToast(e.message, 'error');
+      }
+    }
+
+    async function deleteFac(id, name) {
+      if (!confirm('Usunąć placówkę "' + name + '"? Integracje pozostaną, ale stracą przypisanie.')) return;
+      try {
+        const resp = await apiFetch('/api/facilities/' + id, { method: 'DELETE' });
+        if (!resp.ok) throw new Error('Błąd usuwania');
+        showToast('Placówka usunięta', 'success');
+        loadFacilities();
+      } catch (e) {
+        showToast(e.message, 'error');
       }
     }
 

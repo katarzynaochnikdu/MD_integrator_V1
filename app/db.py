@@ -42,6 +42,16 @@ def get_connection() -> sqlite3.Connection:
     return _CONNECTION
 
 
+def _safe_add_column(conn: sqlite3.Connection, table: str, column: str, col_type: str) -> None:
+    """Add a column to an existing table if it doesn't exist (safe migration)."""
+    try:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+        conn.commit()
+        logger.info("Added column %s to %s", column, table)
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+
 def _init_tables(conn: sqlite3.Connection) -> None:
     """Create tables if they don't exist."""
     conn.executescript("""
@@ -59,7 +69,8 @@ def _init_tables(conn: sqlite3.Connection) -> None:
             field_mappings TEXT DEFAULT '[]',
             active INTEGER DEFAULT 0,
             created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
+            updated_at TEXT NOT NULL,
+            facility_id TEXT DEFAULT ''
         );
 
         CREATE TABLE IF NOT EXISTS lead_events (
@@ -82,7 +93,17 @@ def _init_tables(conn: sqlite3.Connection) -> None:
             user_data TEXT NOT NULL DEFAULT '{}',
             pages_data TEXT NOT NULL DEFAULT '[]',
             role TEXT NOT NULL DEFAULT 'user',
+            facility_id TEXT DEFAULT '',
+            facility_name TEXT DEFAULT '',
             created_at REAL NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS facilities (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            fb_user_id TEXT NOT NULL UNIQUE,
+            fb_user_name TEXT DEFAULT '',
+            created_at TEXT NOT NULL
         );
 
         CREATE INDEX IF NOT EXISTS idx_lead_events_integration
@@ -97,7 +118,16 @@ def _init_tables(conn: sqlite3.Connection) -> None:
             ON integrations(fb_page_id);
         CREATE INDEX IF NOT EXISTS idx_integrations_fb_form
             ON integrations(fb_page_id, fb_form_id);
+        CREATE INDEX IF NOT EXISTS idx_integrations_facility
+            ON integrations(facility_id);
+        CREATE INDEX IF NOT EXISTS idx_facilities_fb_user
+            ON facilities(fb_user_id);
     """)
+
+    # Migration: add columns to existing tables if missing
+    _safe_add_column(conn, "integrations", "facility_id", "TEXT DEFAULT ''")
+    _safe_add_column(conn, "sessions", "facility_id", "TEXT DEFAULT ''")
+    _safe_add_column(conn, "sessions", "facility_name", "TEXT DEFAULT ''")
 
 
 def migrate_from_json() -> None:
