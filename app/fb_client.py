@@ -57,6 +57,7 @@ def get_login_url(state: str = "") -> str:
             "pages_manage_ads",
             "pages_manage_metadata",
             "leads_retrieval",
+            "business_management",
         ]),
         "response_type": "code",
         "state": state,
@@ -114,24 +115,86 @@ async def get_user_info(access_token: str) -> dict[str, Any]:
 
 
 async def get_user_pages(access_token: str) -> list[FBPage]:
-    """Get Facebook Pages the user manages."""
+    """Get Facebook Pages the user manages (direct + via Business Manager)."""
+    seen_ids: set[str] = set()
+    pages: list[FBPage] = []
+
+    # 1. Direct pages (me/accounts) — pages where user is admin directly
     url = _graph_url("me/accounts")
     params = {"fields": "id,name,access_token", "access_token": access_token}
-    pages: list[FBPage] = []
+    async with httpx.AsyncClient(timeout=settings.http_timeout) as client:
+        resp = await client.get(url, params=params)
+
+    if resp.status_code == 200:
+        data = resp.json()
+        for p in data.get("data", []):
+            if p["id"] not in seen_ids:
+                seen_ids.add(p["id"])
+                pages.append(FBPage(
+                    page_id=p["id"],
+                    name=p["name"],
+                    access_token=p["access_token"],
+                ))
+    else:
+        logger.error("FB get pages (me/accounts) failed: %s", resp.text[:500])
+
+    # 2. Business Manager pages (owned + client)
+    businesses = await get_user_businesses(access_token)
+    for biz in businesses:
+        biz_pages = await get_business_pages(biz["id"], access_token)
+        for p in biz_pages:
+            if p.page_id not in seen_ids:
+                seen_ids.add(p.page_id)
+                pages.append(p)
+
+    logger.info("Total pages found: %d (direct + business)", len(pages))
+    return pages
+
+
+async def get_user_businesses(access_token: str) -> list[dict[str, Any]]:
+    """Get businesses the user has access to via Business Manager."""
+    url = _graph_url("me/businesses")
+    params = {"fields": "id,name", "access_token": access_token}
+    businesses: list[dict[str, Any]] = []
     async with httpx.AsyncClient(timeout=settings.http_timeout) as client:
         resp = await client.get(url, params=params)
 
     if resp.status_code != 200:
-        logger.error("FB get pages failed: %s", resp.text[:500])
-        return pages
+        logger.warning("FB get businesses failed (status=%s): %s", resp.status_code, resp.text[:300])
+        return businesses
 
     data = resp.json()
-    for p in data.get("data", []):
-        pages.append(FBPage(
-            page_id=p["id"],
-            name=p["name"],
-            access_token=p["access_token"],
-        ))
+    businesses = data.get("data", [])
+    logger.info("Found %d businesses for user", len(businesses))
+    return businesses
+
+
+async def get_business_pages(business_id: str, access_token: str) -> list[FBPage]:
+    """Get all pages (owned + client) for a Business Manager account."""
+    pages: list[FBPage] = []
+    endpoints = [
+        f"{business_id}/owned_pages",
+        f"{business_id}/client_pages",
+    ]
+    async with httpx.AsyncClient(timeout=settings.http_timeout) as client:
+        for endpoint in endpoints:
+            url = _graph_url(endpoint)
+            params = {"fields": "id,name,access_token", "access_token": access_token}
+            resp = await client.get(url, params=params)
+            if resp.status_code == 200:
+                data = resp.json()
+                for p in data.get("data", []):
+                    token = p.get("access_token", "")
+                    if token:
+                        pages.append(FBPage(
+                            page_id=p["id"],
+                            name=p.get("name", f"Page {p['id']}"),
+                            access_token=token,
+                        ))
+                    else:
+                        logger.warning("Page %s from %s has no access_token — skipping", p["id"], endpoint)
+            else:
+                logger.warning("FB %s failed (status=%s): %s", endpoint, resp.status_code, resp.text[:300])
     return pages
 
 
