@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from starlette.middleware.cors import CORSMiddleware
 
 from app.config import settings
@@ -92,6 +92,12 @@ async def startup_db():
 
 @app.get("/")
 async def root():
+    """Redirect to the facility login page."""
+    return RedirectResponse(url="/login")
+
+
+@app.get("/login")
+async def login_page():
     """Landing page — login via Facebook, then navigate to setup or dashboard."""
     html_path = Path(__file__).parent / "landing.html"
     return HTMLResponse(html_path.read_text(encoding="utf-8"))

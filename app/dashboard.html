@@ -512,7 +512,7 @@
     <div class="login-box">
       <h2>Brak dostępu</h2>
       <div class="login-error" id="unregistered-error" style="display:block; margin-top:1rem;"></div>
-      <button class="login-btn login-btn-fb" style="margin-top:1rem;" onclick="location.href='/'">Wróć do strony głównej</button>
+      <button class="login-btn login-btn-fb" style="margin-top:1rem;" onclick="location.href='/login'">Wróć do strony logowania</button>
     </div>
   </div>
 
@@ -870,12 +870,12 @@
               document.getElementById('sidebar-sub').textContent = data.facility_name;
             }
           } else {
-            // If not logged in, redirect to index
-            window.location.href = '/';
+            // If not logged in, redirect to login
+            window.location.href = '/login';
             return;
           }
         } catch {
-          window.location.href = '/';
+          window.location.href = '/login';
           return;
         }
       }
