@@ -1044,18 +1044,23 @@
       }
     }
 
+    // All available virtual/meta fields from FB lead
+    const VIRTUAL_FIELDS = [
+      { key: '__fb_form_name__',    label: '📋 Nazwa formularza' },
+      { key: '__fb_lead_date__',    label: '📅 Data wpłynięcia' },
+      { key: '__fb_ad_name__',      label: '📢 Nazwa reklamy' },
+      { key: '__fb_adset_name__',   label: '🎯 Nazwa zestawu reklam' },
+      { key: '__fb_campaign_name__',label: '📊 Nazwa kampanii' },
+      { key: '__fb_platform__',     label: '🌐 Platforma (fb/ig)' },
+      { key: '__fb_is_organic__',   label: '🌱 Czy organiczny' },
+      { key: '__fb_lead_id__',      label: '🔑 ID leada' },
+    ];
+
     function renderMappings() {
       const container = document.getElementById('mapping-rows');
       container.innerHTML = '';
 
       const fbQuestions = state.selectedForm.questions || [];
-      const mdFieldIds = state.mdFields.map(f => f.fieldId);
-
-      // Virtual fields (always available)
-      const virtualFields = [
-        { key: '__fb_form_name__', label: '📋 Nazwa formularza FB', virtual: true },
-        { key: '__fb_lead_date__', label: '📅 Data wpłynięcia leada', virtual: true },
-      ];
 
       // Build mapped set
       const mappedFb = new Set(state.mappings.map(m => m.fb_field));
@@ -1074,12 +1079,32 @@
         }
       });
 
-      // Render unmapped virtual fields
-      virtualFields.forEach(vf => {
-        if (!mappedFb.has(vf.key)) {
-          container.appendChild(createMappingRow(vf.key, '', 0, true));
-        }
-      });
+      // "Add field" dropdown — only show unused virtual fields
+      const unusedVirtuals = VIRTUAL_FIELDS.filter(vf => !mappedFb.has(vf.key));
+      if (unusedVirtuals.length > 0) {
+        const addRow = document.createElement('div');
+        addRow.style.cssText = 'display:flex;align-items:center;gap:0.6rem;margin-top:0.8rem;padding:0.5rem;border:1px dashed #27272a;border-radius:10px;';
+        const opts = unusedVirtuals.map(vf =>
+          `<option value="${vf.key}">${vf.label}</option>`
+        ).join('');
+        addRow.innerHTML = `
+          <select id="add-virtual-select" style="flex:1;background:#111218;border:1px solid #27272a;color:#a1a1aa;padding:0.4rem 0.6rem;border-radius:6px;font-size:0.78rem;">
+            <option value="">➕ Dodaj pole meta-danych...</option>
+            ${opts}
+          </select>
+          <button id="btn-add-virtual" class="btn" style="background:#27272a;color:#a1a1aa;font-size:0.75rem;padding:0.4rem 0.8rem;" disabled>Dodaj</button>
+        `;
+        container.appendChild(addRow);
+
+        const sel = addRow.querySelector('#add-virtual-select');
+        const btn = addRow.querySelector('#btn-add-virtual');
+        sel.addEventListener('change', () => { btn.disabled = !sel.value; });
+        btn.addEventListener('click', () => {
+          if (!sel.value) return;
+          state.mappings.push({ fb_field: sel.value, medidesk_field: '', confidence: 0 });
+          renderMappings();
+        });
+      }
     }
 
     function createMappingRow(fbField, mdField, confidence, isVirtual = false) {

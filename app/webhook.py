@@ -135,12 +135,20 @@ async def handle_webhook(request: Request):
             for mapping in sorted_mappings:
                 fb_key = mapping.fb_field
 
-                # Virtual fields: inject computed values
-                if fb_key == "__fb_form_name__":
-                    fb_value = integration.fb_form_name
-                elif fb_key == "__fb_lead_date__":
+                # Virtual fields: inject computed values from lead metadata
+                if fb_key.startswith("__fb_"):
                     from datetime import datetime, timezone
-                    fb_value = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+                    virtual_map = {
+                        "__fb_form_name__": integration.fb_form_name,
+                        "__fb_lead_date__": lead.created_time or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M"),
+                        "__fb_ad_name__": lead.ad_name or "",
+                        "__fb_adset_name__": lead.adset_name or "",
+                        "__fb_campaign_name__": lead.campaign_name or "",
+                        "__fb_platform__": lead.platform or "",
+                        "__fb_is_organic__": "tak" if lead.is_organic else "nie",
+                        "__fb_lead_id__": lead.lead_id or "",
+                    }
+                    fb_value = virtual_map.get(fb_key, "")
                 else:
                     fb_value = lead.field_data.get(fb_key, "")
 

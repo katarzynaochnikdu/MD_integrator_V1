@@ -41,6 +41,8 @@ class FBLead:
     ad_name: str | None = None
     adset_name: str | None = None
     campaign_name: str | None = None
+    platform: str | None = None
+    is_organic: bool | None = None
 
 
 def _graph_url(path: str) -> str:
@@ -240,7 +242,7 @@ async def get_lead_data(lead_id: str, access_token: str) -> FBLead | None:
     """Fetch a specific lead's data from Facebook."""
     url = _graph_url(lead_id)
     params = {
-        "fields": "id,created_time,field_data,ad_id,ad_name,adset_name,campaign_name",
+        "fields": "id,created_time,field_data,ad_id,ad_name,adset_name,campaign_name,platform,is_organic",
         "access_token": access_token,
     }
     async with httpx.AsyncClient(timeout=settings.http_timeout) as client:
@@ -263,6 +265,8 @@ async def get_lead_data(lead_id: str, access_token: str) -> FBLead | None:
         ad_name=data.get("ad_name"),
         adset_name=data.get("adset_name"),
         campaign_name=data.get("campaign_name"),
+        platform=data.get("platform"),
+        is_organic=data.get("is_organic"),
     )
 
 
