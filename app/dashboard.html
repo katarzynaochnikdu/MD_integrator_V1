@@ -507,32 +507,12 @@
     ⚡ TRYB DEMO — dane są symulowane
   </div>
 
-  <!-- Login overlay -->
-  <div class="login-overlay" id="login-overlay">
+  <!-- Unregistered overlay -->
+  <div class="login-overlay" id="unregistered-overlay" style="display:none;">
     <div class="login-box">
-      <h2>Medidesk Integrator</h2>
-      <div class="sub">Zaloguj się do panelu</div>
-      <div class="login-error" id="login-error" style="display:none;"></div>
-
-      <!-- Tab switcher -->
-      <div style="display:flex; gap:0; margin-bottom:1rem; border:1px solid #27272a; border-radius:8px; overflow:hidden;">
-        <button id="tab-admin" onclick="switchLoginTab('admin')" style="flex:1; padding:0.5rem; background:#1e2030; color:#a1a1aa; border:none; cursor:pointer; font-size:0.82rem; font-weight:600; transition:all 0.15s;">Admin</button>
-        <button id="tab-facility" onclick="switchLoginTab('facility')" style="flex:1; padding:0.5rem; background:transparent; color:#52525b; border:none; cursor:pointer; font-size:0.82rem; font-weight:600; transition:all 0.15s;">Placówka</button>
-      </div>
-
-      <!-- Admin login -->
-      <div id="login-admin-panel">
-        <input class="login-input" id="admin-password" type="password" placeholder="Hasło administratora" onkeydown="if(event.key==='Enter')adminLogin()" />
-        <button class="login-btn login-btn-admin" onclick="adminLogin()">Zaloguj jako Admin</button>
-      </div>
-
-      <!-- Facility login -->
-      <div id="login-facility-panel" style="display:none;">
-        <button class="login-btn login-btn-fb" onclick="location.href='/auth/facebook?redirect=/dashboard'">Zaloguj się przez Facebook</button>
-        <div style="margin-top:0.8rem; font-size:0.72rem; color:#52525b; line-height:1.5;">
-          💡 Jeśli Facebook wyświetli ekran <em>„Połącz ponownie”</em> — kliknij ten przycisk. Twoje konto zostanie rozpoznane automatycznie.
-        </div>
-      </div>
+      <h2>Brak dostępu</h2>
+      <div class="login-error" id="unregistered-error" style="display:block; margin-top:1rem;"></div>
+      <button class="login-btn login-btn-fb" style="margin-top:1rem;" onclick="location.href='/'">Wróć do strony głównej</button>
     </div>
   </div>
 
@@ -821,56 +801,7 @@
       const facilityPanel = document.getElementById('login-facility-panel');
       const tabAdmin = document.getElementById('tab-admin');
       const tabFacility = document.getElementById('tab-facility');
-      document.getElementById('login-error').style.display = 'none';
-
-      if (tab === 'admin') {
-        adminPanel.style.display = 'block';
-        facilityPanel.style.display = 'none';
-        tabAdmin.style.background = '#1e2030';
-        tabAdmin.style.color = '#a1a1aa';
-        tabFacility.style.background = 'transparent';
-        tabFacility.style.color = '#52525b';
-      } else {
-        adminPanel.style.display = 'none';
-        facilityPanel.style.display = 'block';
-        tabFacility.style.background = '#1e2030';
-        tabFacility.style.color = '#a1a1aa';
-        tabAdmin.style.background = 'transparent';
-        tabAdmin.style.color = '#52525b';
-      }
-    }
-
-    // ─── Login ───────────────────────────────────────────
-    async function adminLogin() {
-      if (DEMO) {
-        hideLogin('admin');
-        setUser({ name: 'Administrator', id: 'admin' });
-        return;
-      }
-      const pw = document.getElementById('admin-password').value;
-      const errEl = document.getElementById('login-error');
-      try {
-        const resp = await fetch('/auth/facebook/admin/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ password: pw }),
-        });
-        if (resp.ok) {
-          setUser({ name: 'Administrator', id: 'admin' });
-          hideLogin('admin');
-        } else {
-          const data = await resp.json();
-          errEl.textContent = data.error || 'Błąd logowania';
-          errEl.style.display = 'block';
-        }
-      } catch (e) {
-        errEl.textContent = 'Błąd połączenia';
-        errEl.style.display = 'block';
-      }
-    }
-
-    function hideLogin(role) {
-      document.getElementById('login-overlay').style.display = 'none';
+    function setupRoleUI(role) {
       USER_ROLE = role;
       document.getElementById('sidebar-sub').textContent = role === 'admin' ? 'Panel administratora' : 'Panel placówki';
       document.getElementById('user-role-badge').innerHTML = role === 'admin'
@@ -906,7 +837,7 @@
 
     async function init() {
       if (DEMO) {
-        hideLogin(DEMO_ROLE);
+        setupRoleUI(DEMO_ROLE);
         if (DEMO_ROLE === 'admin') {
           setUser({ name: 'Administrator', id: 'admin' });
         } else {
@@ -923,26 +854,30 @@
             if (role === 'unregistered') {
               // User logged in with FB but is not registered as a facility
               setUser(data.user);
-              const errEl = document.getElementById('login-error');
-              errEl.innerHTML = '⚠️ Twoje konto Facebook (<strong>' + (data.user.name || '') + '</strong>, ID: ' + (data.user.id || '') + ') nie jest zarejestrowane jako placówka. Skontaktuj się z administratorem Medidesk.';
-              errEl.style.display = 'block';
-              switchLoginTab('facility');
-              // Stay on login overlay
+              const errEl = document.getElementById('unregistered-error');
+              errEl.innerHTML = '⚠️ Twoje konto Facebook (<strong>' + (data.user.name || '') + '</strong>, ID: ' + (data.user.id || '') + ') nie jest jeszcze zatwierdzone jako placówka.<br/><br/>Powiedz administratorowi, że logowanie zakończyło się sukcesem, a wkrótce zatwierdzi Twój dostęp.';
+              document.getElementById('unregistered-overlay').style.display = 'flex';
               return;
             }
             
             setUser(data.user);
             USER_ROLE = role;
             USER_PAGES = (data.pages || []).map(p => p.page_id);
-            hideLogin(USER_ROLE);
+            setupRoleUI(USER_ROLE);
             
             // Show facility name in sidebar for non-admin
             if (role === 'user' && data.facility_name) {
               document.getElementById('sidebar-sub').textContent = data.facility_name;
             }
+          } else {
+            // If not logged in, redirect to index
+            window.location.href = '/';
+            return;
           }
-          // If not logged in, login overlay stays visible
-        } catch {}
+        } catch {
+          window.location.href = '/';
+          return;
+        }
       }
 
       if (USER_ROLE) {

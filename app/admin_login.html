@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Medidesk Integrator - Panel Administratora</title>
+  <style>
+    :root { font-family: 'Inter', system-ui, sans-serif; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: #0a0c10;
+      color: #e4e4e7;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    .login-box {
+      background: #13141b; border: 1px solid #1e2030; border-radius: 16px;
+      padding: 2.5rem; width: 380px; text-align: center;
+    }
+    .login-box h2 {
+      font-size: 1.2rem; font-weight: 700; margin-bottom: 0.3rem;
+      background: linear-gradient(135deg, #3b82f6, #a855f7);
+      -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .login-box .sub { font-size: 0.78rem; color: #52525b; margin-bottom: 1.5rem; }
+    .login-input {
+      width: 100%; padding: 0.8rem; border-radius: 8px;
+      border: 1px solid #27272a; background: #0f1117; color: #e4e4e7;
+      font-size: 0.85rem; margin-bottom: 1rem; outline: none;
+    }
+    .login-input:focus { border-color: #3b82f6; }
+    .login-btn {
+      width: 100%; padding: 0.8rem; border-radius: 8px; border: none;
+      font-size: 0.85rem; font-weight: 600; cursor: pointer;
+      background: #3b82f6; color: white; transition: background 0.15s;
+    }
+    .login-btn:hover { background: #2563eb; }
+    .login-error {
+      color: #f87171; font-size: 0.8rem; margin-bottom: 1rem;
+      background: rgba(248, 113, 113, 0.1); padding: 0.5rem; border-radius: 6px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-box">
+    <h2>Medidesk Admin</h2>
+    <div class="sub">Logowanie do panelu zarządzania</div>
+    
+    <div class="login-error" id="login-error"></div>
+    <input class="login-input" id="admin-password" type="password" placeholder="Hasło administratora" onkeydown="if(event.key==='Enter')adminLogin()" />
+    <button class="login-btn" onclick="adminLogin()">Zaloguj się</button>
+  </div>
+
+  <script>
+    async function init() {
+      // If already logged in as admin, go to dashboard
+      try {
+        const resp = await fetch('/auth/facebook/me');
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.role === 'admin') {
+            window.location.href = '/dashboard';
+          }
+        }
+      } catch (e) {}
+    }
+    init();
+
+    async function adminLogin() {
+      const pw = document.getElementById('admin-password').value;
+      const errEl = document.getElementById('login-error');
+      try {
+        const resp = await fetch('/auth/facebook/admin/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: pw }),
+        });
+        if (resp.ok) {
+          window.location.href = '/dashboard';
+        } else {
+          const data = await resp.json();
+          errEl.textContent = data.error || 'Błąd logowania';
+          errEl.style.display = 'block';
+        }
+      } catch (e) {
+        errEl.textContent = 'Błąd połączenia';
+        errEl.style.display = 'block';
+      }
+    }
+  </script>
+</body>
+</html>

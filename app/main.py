@@ -704,8 +704,15 @@ async def setup_wizard_page():
 
 @app.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)
 async def dashboard_page():
-    """Serve the admin dashboard."""
+    """Serve the admin/facility dashboard."""
     path = Path(__file__).resolve().parent / "dashboard.html"
     html = path.read_text(encoding="utf-8")
     return HTMLResponse(content=html)
 
+
+@app.get("/admin", response_class=HTMLResponse, include_in_schema=False)
+async def admin_page():
+    """Serve the admin login page."""
+    path = Path(__file__).resolve().parent / "admin_login.html"
+    html = path.read_text(encoding="utf-8")
+    return HTMLResponse(content=html)
