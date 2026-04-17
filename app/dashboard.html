@@ -1050,7 +1050,7 @@
         <div class="int-card" data-id="${i.id}" style="display:flex; align-items:center; justify-content:space-between; padding:0.8rem 1rem; gap:1rem; margin-bottom:0.6rem;">
           <!-- Left: Icon & Names -->
           <div style="display:flex; align-items:center; gap:0.8rem; flex:1; min-width:0;">
-            <div class="int-card-icon fb" style="width:34px;height:34px;font-size:1.1rem;border-radius:8px;">📘</div>
+            <div style="width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:rgba(24,119,242,0.15);border:1px solid rgba(24,119,242,0.3);color:#60a5fa;font-size:0.7rem;font-weight:800;letter-spacing:0.03em;flex-shrink:0;">FB</div>
             <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:0.25rem;">
               <div style="display:flex; align-items:center; gap:0.5rem;">
                 <span class="name" title="${displayName}" style="font-size:0.92rem; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${displayName}</span>
@@ -1060,7 +1060,7 @@
               </div>
               ${showContext ? `
               <div style="font-size:0.68rem; color:#71717a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                📘 ${i.fb_page_name} · ${i.fb_form_name} → ${i.medidesk_form_name || i.medidesk_form_id}
+                ${i.fb_page_name} · ${i.fb_form_name} → ${i.medidesk_form_name || i.medidesk_form_id}
               </div>` : `
               <div class="int-card-flow" style="margin:0; padding:0; background:transparent; font-size:0.7rem;">
                 <span style="color:#71717a;">${i.fb_page_name}</span>
