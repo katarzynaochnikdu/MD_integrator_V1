@@ -1469,19 +1469,19 @@
           return;
         }
 
-        let html = '<table style="width:100%;"><thead><tr>' +
-          '<th>Nazwa</th><th>FB User ID</th><th>FB Imię</th><th>Integracje</th><th>Data</th><th></th>' +
+        let html = '<table style="width:100%; border-collapse: collapse;"><thead><tr style="color:#71717a; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em;">' +
+          '<th style="text-align:left; padding:0.5rem 0.8rem;">Nazwa</th><th style="text-align:left; padding:0.5rem 0.8rem;">FB User ID</th><th style="text-align:left; padding:0.5rem 0.8rem;">FB Imię</th><th style="text-align:center; padding:0.5rem 0.8rem;">Integracje</th><th style="text-align:left; padding:0.5rem 0.8rem;">Data</th><th style="width:5%;"></th>' +
           '</tr></thead><tbody>';
 
         data.facilities.forEach(f => {
           const date = f.created_at ? new Date(f.created_at).toLocaleDateString('pl-PL') : '—';
           html += `<tr>
-            <td style="font-weight:600;">${f.name}</td>
-            <td style="font-family:monospace; font-size:0.72rem; color:#71717a;">${f.fb_user_id}</td>
-            <td>${f.fb_user_name || '—'}</td>
-            <td><span class="badge badge-sent">${f.integrations_count}</span></td>
-            <td style="color:#52525b;">${date}</td>
-            <td><button class="btn btn-sm btn-danger" onclick="deleteFac('${f.id}', '${f.name}')">🗑</button></td>
+            <td style="font-weight:600; padding:1rem 0.8rem;">${f.name}</td>
+            <td style="font-family:monospace; font-size:0.75rem; color:#71717a;">${f.fb_user_id}</td>
+            <td style="color:#e4e4e7;">${f.fb_user_name || '<span style="color:#52525b;font-style:italic;">—</span>'}</td>
+            <td style="text-align:center;"><span class="badge badge-sent">${f.integrations_count}</span></td>
+            <td style="color:#52525b; font-size:0.75rem;">${date}</td>
+            <td style="text-align:right;"><button class="btn btn-sm btn-outline" style="color:#f87171; border-color:#451a1d;" onclick="deleteFac('${f.id}', '${f.name}')">🗑</button></td>
           </tr>`;
         });
 
