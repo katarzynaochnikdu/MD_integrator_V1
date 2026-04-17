@@ -1304,6 +1304,7 @@
         if (DEMO_MODE) {
           // In demo mode, just simulate success
           await demoDelay(1500);
+          setSaveStatus('success', 'DEMO: Integracja aktywna (symulacja).');
         } else {
           // 1. Create integration
           const createResp = await fetch('/api/integrations', {
@@ -1343,8 +1344,6 @@
           } else {
             setSaveStatus('success', 'Integracja aktywna. Webhook FB zasubskrybowany — nowe leady będą trafiać do Medidesk.');
           }
-        } else {
-          setSaveStatus('success', 'DEMO: Integracja aktywna (symulacja).');
         }
 
         // Show summary
