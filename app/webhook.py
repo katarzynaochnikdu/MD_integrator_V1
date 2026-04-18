@@ -320,6 +320,98 @@ async def handle_webhook(request: Request):
             except Exception as exc:
                 logger.warning("Could not log FB payload for lead %s: %s", lead_id, exc)
 
+            # Deep consent diagnostic: compare what the FB form DECLARES
+            # (consent checkboxes extracted at wizard time into fb_form_questions)
+            # vs what the lead actually DELIVERED (keys present in field_data).
+            # This is the definitive log for the "I filled consents but they
+            # didn't arrive" scenario — FB Testing Tool notoriously strips
+            # consent values even when you tick the boxes in its UI. Marking
+            # with "organic=True" + 0 filled consents is the fingerprint.
+            try:
+                import json as _json
+                form_questions = list(getattr(integration, "fb_form_questions", None) or [])
+                defined_consent_checkboxes = [
+                    q for q in form_questions
+                    if isinstance(q, dict) and q.get("consent_kind") == "checkbox"
+                ]
+                defined_consent_keys = [
+                    q.get("key", "") for q in defined_consent_checkboxes if q.get("key")
+                ]
+                declared_non_consent_keys = sorted(
+                    q.get("key", "") for q in form_questions
+                    if isinstance(q, dict)
+                    and not q.get("is_consent")
+                    and not (q.get("key", "") or "").startswith("__")
+                    and q.get("key")
+                )
+                received_keys = set(lead.field_data.keys())
+                filled_consent_keys = [
+                    k for k in defined_consent_keys
+                    if str(lead.field_data.get(k, "")).strip().lower()
+                    in ("true", "1", "yes", "tak", "on", "y", "t", "checked")
+                ]
+                present_but_empty_consent_keys = [
+                    k for k in defined_consent_keys
+                    if k in received_keys and k not in filled_consent_keys
+                ]
+                missing_consent_keys = [
+                    k for k in defined_consent_keys if k not in received_keys
+                ]
+                missing_business_keys = [
+                    k for k in declared_non_consent_keys if k not in received_keys
+                ]
+                unexpected_keys = sorted(
+                    k for k in received_keys
+                    if k not in defined_consent_keys
+                    and k not in declared_non_consent_keys
+                )
+                is_test_lead = bool(lead.is_organic) and not lead.ad_id
+                logger.info(
+                    "FB consent diagnostic lead=%s integration=%s is_test_lead=%s "
+                    "form_declares={total_questions=%d consents=%d consent_keys=%s business_keys=%s} "
+                    "lead_delivered={total_fields=%d filled_consents=%d filled_consent_keys=%s "
+                    "empty_consent_keys=%s missing_consents=%s missing_business=%s unexpected=%s} "
+                    "verdict=%s",
+                    lead_id,
+                    integration.id,
+                    is_test_lead,
+                    len(form_questions),
+                    len(defined_consent_keys),
+                    defined_consent_keys,
+                    declared_non_consent_keys,
+                    len(received_keys),
+                    len(filled_consent_keys),
+                    filled_consent_keys,
+                    present_but_empty_consent_keys,
+                    missing_consent_keys,
+                    missing_business_keys,
+                    unexpected_keys,
+                    (
+                        "NO_CONSENTS_DEFINED_IN_FORM" if not defined_consent_keys
+                        else "ALL_CONSENTS_DELIVERED" if not missing_consent_keys and not present_but_empty_consent_keys
+                        else "LIKELY_FB_TEST_TOOL_BUG" if is_test_lead and not filled_consent_keys
+                        else "CONSENTS_MISSING_FROM_PAYLOAD"
+                    ),
+                )
+                if defined_consent_checkboxes:
+                    consent_detail = [
+                        {
+                            "key": q.get("key"),
+                            "label": (q.get("label") or "")[:80],
+                            "required": bool(q.get("is_required")),
+                            "delivered": q.get("key") in received_keys,
+                            "raw_value": str(lead.field_data.get(q.get("key", ""), ""))[:50],
+                        }
+                        for q in defined_consent_checkboxes
+                    ]
+                    logger.info(
+                        "FB consent detail lead=%s %s",
+                        lead_id,
+                        _json.dumps(consent_detail, ensure_ascii=False)[:2000],
+                    )
+            except Exception as exc:
+                logger.warning("Consent diagnostic failed for lead %s: %s", lead_id, exc)
+
             fields_values = build_medidesk_fields(
                 integration,
                 lead.field_data,
