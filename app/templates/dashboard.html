@@ -1991,12 +1991,13 @@
         '__fb_lead_id__': '🔑 ID leada',
       };
       const fbQuestions = integration.fb_form_questions || [];
+      const getQuestion = (key) => fbQuestions.find(q => (q.key || q.name || q.label) === key);
       const formatFbField = (key) => {
         if (!key) return '';
         if (key.startsWith('__const:') && key.endsWith('__')) return '📌 ' + key.slice(8, -2);
         if (key.startsWith('__CONST__')) return '📌 ' + key.slice(9);
         if (VIRT_LABELS[key]) return VIRT_LABELS[key];
-        const q = fbQuestions.find(q => (q.key || q.name || q.label) === key);
+        const q = getQuestion(key);
         if (q && q.is_consent) {
           const icon = q.consent_kind === 'text' ? '📝' : '🔒';
           return `${icon} ${q.label || key}` + (q.consent_kind === 'text' ? ' (treść)' : '');
@@ -2004,13 +2005,80 @@
         return key;
       };
       const mappings = (integration.field_mappings || []).filter(m => (m.medidesk_field || '').trim());
-      document.getElementById('room-mappings-body').innerHTML = mappings.map(m => `
+
+      // --- Group consent pairs (checkbox + text) together ---
+      const consentPairs = new Map(); // base_key => { checkbox: m, text: m }
+      const regularMappings = [];
+
+      mappings.forEach(m => {
+        const q = getQuestion(m.fb_field);
+        if (q && q.is_consent) {
+          // Derive base key: "Zgoda-1-tekst" → "Zgoda-1", "Zgoda-1" → "Zgoda-1"
+          const isText = q.consent_kind === 'text';
+          const baseKey = isText 
+            ? (m.fb_field.replace(/-tekst$|_tekst$|_text$/i, '') || m.fb_field)
+            : m.fb_field;
+          if (!consentPairs.has(baseKey)) consentPairs.set(baseKey, {});
+          const pair = consentPairs.get(baseKey);
+          if (isText) pair.text = m; else pair.checkbox = m;
+        } else {
+          regularMappings.push(m);
+        }
+      });
+
+      // Render regular fields first, then consent pairs
+      let tableHtml = regularMappings.map(m => `
         <tr>
           <td class="fb-col" title="${(m.fb_field || '').replace(/"/g,'&quot;')}">${formatFbField(m.fb_field)}</td>
           <td class="arrow">→</td>
           <td class="md-col">${m.medidesk_field}</td>
         </tr>
-      `).join('') || '<tr><td colspan="3" style="color:var(--text-dim);text-align:center;">Brak mapowań</td></tr>';
+      `).join('');
+
+      // Consent pairs: render as grouped block
+      let consentIdx = 0;
+      consentPairs.forEach((pair, baseKey) => {
+        const cb = pair.checkbox;
+        const txt = pair.text;
+        const cbQ = cb ? getQuestion(cb.fb_field) : null;
+        const txtQ = txt ? getQuestion(txt.fb_field) : null;
+        const label = (cbQ && cbQ.label) || baseKey;
+        // Truncate label to ~60 chars for display
+        const shortLabel = label.length > 60 ? label.substring(0, 57) + '…' : label;
+        const fullLabel = label.replace(/"/g, '&quot;');
+        const toggleId = `consent-detail-${consentIdx++}`;
+
+        tableHtml += `
+        <tr style="border-top:1px solid var(--border-primary);">
+          <td class="fb-col" colspan="3" style="padding:0.6rem;">
+            <div style="display:flex;align-items:flex-start;gap:0.6rem;flex-wrap:wrap;">
+              <div style="flex:1;min-width:200px;">
+                <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.3rem;">
+                  <span style="font-size:0.85rem;">🔒</span>
+                  <span style="font-weight:600;font-size:0.82rem;" title="${fullLabel}">${shortLabel}</span>
+                  <button onclick="document.getElementById('${toggleId}').style.display=document.getElementById('${toggleId}').style.display==='none'?'block':'none';this.textContent=this.textContent==='▼'?'▲':'▼'" 
+                    style="background:none;border:1px solid var(--border-primary);color:var(--text-muted);font-size:0.6rem;padding:1px 5px;border-radius:4px;cursor:pointer;margin-left:4px;">▼</button>
+                </div>
+                <div id="${toggleId}" style="display:none;font-size:0.72rem;color:var(--text-muted);line-height:1.4;padding:0.4rem 0.6rem;background:var(--bg-surface-hover);border-radius:6px;margin-top:0.3rem;max-height:120px;overflow-y:auto;">
+                  ${fullLabel}
+                </div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:0.25rem;min-width:180px;">
+                ${cb ? `<div style="display:flex;align-items:center;gap:0.4rem;font-size:0.78rem;">
+                  <span style="color:var(--text-muted);">☑</span>
+                  <span class="md-col" style="font-weight:500;">${cb.medidesk_field}</span>
+                </div>` : ''}
+                ${txt ? `<div style="display:flex;align-items:center;gap:0.4rem;font-size:0.78rem;">
+                  <span style="color:var(--text-muted);">📝</span>
+                  <span class="md-col" style="font-weight:500;">${txt.medidesk_field}</span>
+                </div>` : ''}
+              </div>
+            </div>
+          </td>
+        </tr>`;
+      });
+
+      document.getElementById('room-mappings-body').innerHTML = tableHtml || '<tr><td colspan="3" style="color:var(--text-dim);text-align:center;">Brak mapowań</td></tr>';
 
       // Group attempts by lead_id — latest attempt drives the row's status
       const leadGroups = new Map();
