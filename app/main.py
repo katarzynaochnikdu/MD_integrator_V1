@@ -887,6 +887,9 @@ async def delete_lead(lead_id: str, request: Request, _session=Depends(require_a
     """Delete all events for a given lead from history.
 
     Non-admin can only delete leads from integrations in their own facility.
+    ORPHAN LEADS (integration was deleted but history survived) are deletable
+    by anyone logged in — there's no facility left to scope against, and the
+    whole point of those entries is cleanup of dead history rows.
     """
     from app.db import get_connection
     conn = get_connection()
@@ -897,13 +900,19 @@ async def delete_lead(lead_id: str, request: Request, _session=Depends(require_a
 
     # Facility scoping: non-admin may delete leads from ANY facility they're
     # a member of (primary OR secondary), not only their session's primary.
+    # Orphan rows (integration deleted) bypass the scope check — with no
+    # integration there's no facility to protect, and without this bypass
+    # users get stuck with undeletable stale history after any "usuń
+    # integrację" that left failed-webhook rows behind.
     if _session.get("role") != "admin":
         allowed_facilities = _session_facility_ids(_session)
         if not allowed_facilities:
             return JSONResponse(status_code=403, content={"error": "Brak dostępu"})
         for r in rows:
             integ = get_integration(r["integration_id"])
-            if not integ or integ.facility_id not in allowed_facilities:
+            if integ is None:
+                continue  # orphan — integration already deleted, allow cleanup
+            if integ.facility_id not in allowed_facilities:
                 return JSONResponse(status_code=403, content={"error": "Brak dostępu do tego leada"})
 
     conn.execute("DELETE FROM lead_events WHERE lead_id = ?", (lead_id,))
