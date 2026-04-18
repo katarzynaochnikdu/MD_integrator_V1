@@ -119,11 +119,16 @@ async def submit_form_urlencoded(
         pass
 
     if resp.status_code != 200:
-        logger.info(
-            "Medidesk POST form=%s status=%s body=%s",
+        # Log BOTH Medidesk's response AND the body we sent — without the
+        # request body it's impossible to tell why their API rejected the lead
+        # (value too long? wrong format? missing required?). Body is already
+        # URL-encoded so values are non-readable secrets-style.
+        logger.warning(
+            "Medidesk POST form=%s status=%s response=%s sent_body=%s",
             form_id,
             resp.status_code,
             (resp.text or "")[:1200],
+            body[:2000],
         )
 
     return MedideskResult(
