@@ -868,9 +868,19 @@
           <!-- Add facility form (hidden) -->
           <div id="add-facility-form" style="display:none; padding:1rem; margin-bottom:1rem; background:var(--bg-surface-hover); border:1px solid var(--border-primary); border-radius:10px;">
             <div style="display:flex; flex-direction:column; gap:0.6rem;">
-              <input type="text" id="fac-name" placeholder="Nazwa placówki (np. Klinika Dental)" style="background:var(--bg-surface); border:1px solid var(--border-primary); color:var(--text-primary); padding:0.5rem 0.7rem; border-radius:6px; font-size:0.82rem;" />
-              <input type="text" id="fac-fb-user-id" placeholder="Facebook User ID (np. 10229876543210)" style="background:var(--bg-surface); border:1px solid var(--border-primary); color:var(--text-primary); padding:0.5rem 0.7rem; border-radius:6px; font-size:0.82rem;" />
-              <input type="text" id="fac-fb-user-name" placeholder="Nazwa użytkownika FB (opcjonalnie)" style="background:var(--bg-surface); border:1px solid var(--border-primary); color:var(--text-primary); padding:0.5rem 0.7rem; border-radius:6px; font-size:0.82rem;" />
+              <div>
+                <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:0.25rem;">Nazwa placówki <span style="color:#f87171;">*</span></label>
+                <input type="text" id="fac-name" placeholder="np. Klinika Dental" style="background:var(--bg-surface); border:1px solid var(--border-primary); color:var(--text-primary); padding:0.5rem 0.7rem; border-radius:6px; font-size:0.82rem; width:100%; box-sizing:border-box;" />
+              </div>
+              <div>
+                <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:0.25rem;">Facebook User ID osoby-admina <span style="color:#f87171;">*</span></label>
+                <input type="text" id="fac-fb-user-id" placeholder="np. 10229876543210" style="background:var(--bg-surface); border:1px solid var(--border-primary); color:var(--text-primary); padding:0.5rem 0.7rem; border-radius:6px; font-size:0.82rem; width:100%; box-sizing:border-box;" />
+                <div style="font-size:0.68rem;color:var(--text-dim);margin-top:0.2rem;">ID konta Facebook osoby zarządzającej placówką (nie ID strony FB). Pojawia się automatycznie po pierwszym logowaniu przez FB.</div>
+              </div>
+              <div>
+                <label style="display:block;font-size:0.72rem;color:var(--text-muted);margin-bottom:0.25rem;">Imię / opis (opcjonalnie)</label>
+                <input type="text" id="fac-fb-user-name" placeholder="np. Jan Kowalski" style="background:var(--bg-surface); border:1px solid var(--border-primary); color:var(--text-primary); padding:0.5rem 0.7rem; border-radius:6px; font-size:0.82rem; width:100%; box-sizing:border-box;" />
+              </div>
               <div style="display:flex; gap:0.5rem; justify-content:flex-end;">
                 <button class="btn btn-outline btn-sm" onclick="toggleAddFacility()">Anuluj</button>
                 <button class="btn btn-success btn-sm" onclick="saveFacility()">💾 Zapisz</button>
@@ -995,6 +1005,9 @@
       <div class="app-dialog-message" id="app-dialog-message"></div>
       <div class="app-dialog-input-wrap" id="app-dialog-input-wrap" style="display:none;">
         <input type="text" id="app-dialog-input" autocomplete="off" />
+      </div>
+      <div class="app-dialog-input-wrap" id="app-dialog-select-wrap" style="display:none;">
+        <select id="app-dialog-select" style="width:100%;padding:0.55rem 0.7rem;background:var(--bg-surface);border:1px solid var(--border-primary);color:var(--text-primary);border-radius:6px;font-size:0.85rem;box-sizing:border-box;"></select>
       </div>
       <div class="app-dialog-buttons">
         <button class="btn btn-outline" id="app-dialog-cancel">Anuluj</button>
@@ -2408,6 +2421,8 @@
       const msgEl = document.getElementById('app-dialog-message');
       const inputWrap = document.getElementById('app-dialog-input-wrap');
       const inputEl = document.getElementById('app-dialog-input');
+      const selectWrap = document.getElementById('app-dialog-select-wrap');
+      const selectEl = document.getElementById('app-dialog-select');
       const okBtn = document.getElementById('app-dialog-ok');
       const cancelBtn = document.getElementById('app-dialog-cancel');
 
@@ -2419,9 +2434,18 @@
 
       if (_appDialogMode === 'prompt') {
         inputWrap.style.display = '';
+        selectWrap.style.display = 'none';
         inputEl.value = opts.defaultInput || '';
+      } else if (_appDialogMode === 'select') {
+        inputWrap.style.display = 'none';
+        selectWrap.style.display = '';
+        selectEl.innerHTML = (opts.selectOptions || [])
+          .map(o => `<option value="${(o.value||'').replace(/"/g,'&quot;')}">${o.label || o.value}</option>`)
+          .join('');
+        if (opts.defaultInput) selectEl.value = opts.defaultInput;
       } else {
         inputWrap.style.display = 'none';
+        selectWrap.style.display = 'none';
       }
 
       okBtn.textContent = opts.okLabel || 'OK';
@@ -2432,11 +2456,12 @@
       cancelBtn.className = 'btn btn-sm btn-outline';
 
       overlay.style.display = 'flex';
-      // Focus management — input gets focus in prompt mode, OK button otherwise.
       setTimeout(() => {
         if (_appDialogMode === 'prompt' && inputEl) {
           inputEl.focus();
           if (inputEl.select) inputEl.select();
+        } else if (_appDialogMode === 'select' && selectEl) {
+          selectEl.focus();
         } else if (okBtn) {
           okBtn.focus();
         }
@@ -2448,12 +2473,15 @@
     function _resolveAppDialog(okPressed) {
       const overlay = document.getElementById('app-dialog-overlay');
       const inputEl = document.getElementById('app-dialog-input');
+      const selectEl = document.getElementById('app-dialog-select');
       overlay.style.display = 'none';
       const r = _appDialogResolver;
       _appDialogResolver = null;
       if (!r) return;
       if (_appDialogMode === 'prompt') {
         r(okPressed ? (inputEl.value || '') : null);
+      } else if (_appDialogMode === 'select') {
+        r(okPressed ? (selectEl.value || null) : null);
       } else if (_appDialogMode === 'alert') {
         r(true);
       } else {
@@ -2509,6 +2537,13 @@
         mode: 'prompt', message,
         title: opts.title, defaultInput: defaultVal,
         okLabel: opts.okLabel, cancelLabel: opts.cancelLabel,
+      });
+    }
+    function appSelect(message, selectOptions, opts = {}) {
+      return _showAppDialog({
+        mode: 'select', message, selectOptions,
+        title: opts.title, defaultInput: opts.defaultValue,
+        okLabel: opts.okLabel || 'Wybierz', cancelLabel: opts.cancelLabel,
       });
     }
 
@@ -3349,7 +3384,7 @@
         }
 
         let html = '<table style="width:100%; border-collapse: collapse;"><thead><tr style="color:var(--text-muted); font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em;">' +
-          '<th style="text-align:left; padding:0.5rem 0.8rem;">Nazwa</th><th style="text-align:left; padding:0.5rem 0.8rem;">FB User ID</th><th style="text-align:left; padding:0.5rem 0.8rem;">FB Imię</th><th style="text-align:center; padding:0.5rem 0.8rem;">Integracje</th><th style="text-align:left; padding:0.5rem 0.8rem;">Data</th><th style="width:5%;"></th>' +
+          '<th style="text-align:left; padding:0.5rem 0.8rem;">Nazwa placówki</th><th style="text-align:left; padding:0.5rem 0.8rem;" title="ID konta Facebook osoby-admina tej placówki">Admin FB (ID)</th><th style="text-align:left; padding:0.5rem 0.8rem;">Osoba / Admin</th><th style="text-align:center; padding:0.5rem 0.8rem;">Integracje</th><th style="text-align:left; padding:0.5rem 0.8rem;">Data</th><th style="width:5%;"></th>' +
           '</tr></thead><tbody>';
 
         data.facilities.forEach(f => {
@@ -3401,10 +3436,9 @@
         }
       } catch {}
 
-      // Also load pending registrations + users + facilities (needed for membership picker)
+      // Also load pending registrations + users (facilities already in _allFacilities above)
       loadPending();
       loadUsers();
-      loadFacilities();
     }
 
     // ─── Users (admin) ──────────────────────────────────
@@ -3519,21 +3553,18 @@
     async function addMembership(fbUserId) {
       const facs = (_allFacilities || []);
       if (facs.length === 0) { showToast('Brak placówek w systemie', 'error'); return; }
-      const list = facs.map((f, i) => `${i+1}. ${f.name} (${f.id})`).join('\n');
-      const pick = await appPrompt('Wybierz numer placówki do dodania:\n\n' + list, '', { title: 'Dodaj placówkę', okLabel: 'Dalej' });
-      if (pick === null) return;
-      const idx = parseInt(pick, 10) - 1;
-      if (isNaN(idx) || idx < 0 || idx >= facs.length) {
-        showToast('Niepoprawny numer placówki', 'error');
-        return;
-      }
-      const role = await appPrompt('Rola dla "' + facs[idx].name + '" (user / viewer):', 'user', { title: 'Wybierz rolę', okLabel: 'Dodaj' });
-      if (role === null || !role.trim()) return;
+      const facId = await appSelect('Wybierz placówkę:', facs.map(f => ({ value: f.id, label: f.name })), { title: 'Dodaj placówkę — krok 1/2', okLabel: 'Dalej' });
+      if (facId === null) return;
+      const role = await appSelect('Rola użytkownika w tej placówce:', [
+        { value: 'user', label: 'user — edycja integracji' },
+        { value: 'viewer', label: 'viewer — tylko podgląd' },
+      ], { title: 'Dodaj placówkę — krok 2/2', okLabel: 'Dodaj' });
+      if (role === null) return;
       try {
         const resp = await apiFetch(`/api/admin/users/${fbUserId}/memberships`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ facility_id: facs[idx].id, role }),
+          body: JSON.stringify({ facility_id: facId, role }),
         });
         if (!resp.ok) { const d = await resp.json().catch(()=>({})); throw new Error(d.error || 'Błąd'); }
         showToast('Placówka dodana', 'success');
