@@ -2382,9 +2382,17 @@
       container.innerHTML = '';
 
       const fbQuestions = editState.integration.fb_form_questions || [];
+      // Build the set ONCE — used by all three sections to dedupe. Without this,
+      // synthesized consent questions (key=`__consent_text:X`) appeared twice:
+      // Section 1 found them in fbQuestions and rendered the proper 📝 chip,
+      // then Section 2 saw the same key in mappings (it starts with `__`) and
+      // rendered another row as a green-chip "virtual" with the raw key visible
+      // — which looked like a corrupt duplicate to the user.
+      const fbKeySet = new Set(fbQuestions.map(q => q.key || q.name || q.label || ''));
 
       // Section 1 — real FB form fields in FB form order (mapped, skipped or not).
       // This mirrors the setup_wizard's main list so edit looks identical to create.
+      // Includes synthesized consent entries (CHECKBOX + __consent_text:KEY).
       fbQuestions.forEach(q => {
         const key = q.key || q.name || q.label || '';
         const m = editState.mappings.find(mp => mp.fb_field === key);
@@ -2393,11 +2401,15 @@
         container.appendChild(createEditMappingRow(key, md, conf, false));
       });
 
-      // Section 2 — user-added rows (virtuals + constants) in insertion order.
+      // Section 2 — TRUE user-added rows: meta virtuals (__fb_*) + constants
+      // (__const:..., __CONST__...). MUST exclude anything already shown in
+      // Section 1 — that's where __consent_text:X gets rendered. Without the
+      // fbKeySet check the same consent appeared twice (with a green-chip
+      // ugly raw-key duplicate underneath the proper 📝 row).
       editState.mappings.forEach(m => {
-        if (m.fb_field.startsWith('__')) {
-          container.appendChild(createEditMappingRow(m.fb_field, m.medidesk_field, m.confidence, true));
-        }
+        if (!m.fb_field.startsWith('__')) return;
+        if (fbKeySet.has(m.fb_field)) return;  // already rendered as a real question
+        container.appendChild(createEditMappingRow(m.fb_field, m.medidesk_field, m.confidence, true));
       });
 
       // Section 3 — orphaned mappings whose fb_field is neither in the current
@@ -2405,7 +2417,6 @@
       // integration was created. We render them so the user can clean them up;
       // the row's ✕ button wouldn't appear (it's virtual-only) so we give these
       // a remove action by treating them as "user-added" for UI purposes.
-      const fbKeySet = new Set(fbQuestions.map(q => q.key || q.name || q.label || ''));
       editState.mappings.forEach(m => {
         if (m.fb_field.startsWith('__')) return;
         if (fbKeySet.has(m.fb_field)) return;
