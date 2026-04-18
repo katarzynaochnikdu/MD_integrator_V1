@@ -106,18 +106,6 @@
       flex: 1;
       min-height: 100vh;
     }
-    .main-header {
-      padding: 1.2rem 2rem;
-      border-bottom: 1px solid #E5E7EB;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      background: #FFFFFF;
-      position: sticky;
-      top: 0;
-      z-index: 40;
-    }
-    .main-header h2 { font-size: 1.1rem; font-weight: 700; }
     .main-content { padding: 1.5rem 2rem; max-width: 1100px; }
 
     /* ─── Section panels ─── */
@@ -662,9 +650,6 @@
 
   <!-- Main content -->
   <div class="main">
-    <div class="main-header">
-      <h2 id="section-title">Przegląd</h2>
-    </div>
     <div class="main-content">
 
       <!-- Section: Overview -->
@@ -1011,19 +996,12 @@
     }
 
     // ─── Section nav ────────────────────────────────────
-    const titles = { overview: 'Przegląd', integrations: 'Integracje', room: '', facilities: 'Placówki' };
-
     function showSection(name) {
       document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
       document.getElementById('sec-' + name).classList.add('active');
       document.querySelectorAll('.nav-item[data-section]').forEach(n => {
         n.classList.toggle('active', n.dataset.section === name);
       });
-      const title = titles[name] || name;
-      const titleEl = document.getElementById('section-title');
-      const headerEl = titleEl && titleEl.closest('.main-header');
-      if (headerEl) headerEl.style.display = title ? '' : 'none';
-      titleEl.textContent = title;
       if (name === 'facilities') loadFacilities();
     }
 
