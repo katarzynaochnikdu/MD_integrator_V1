@@ -219,21 +219,6 @@ async def startup_db():
 # ─── Existing endpoints ───────────────────────────────────────────────
 
 
-@app.get("/debug/render-test")
-async def debug_render_test(request: Request):
-    """Temporary diagnostic endpoint — remove after debugging."""
-    import traceback
-    try:
-        resp = render_template(request, "privacy.html")
-        return {"status": "ok", "type": str(type(resp))}
-    except Exception as e:
-        return JSONResponse(status_code=200, content={
-            "status": "error",
-            "error": str(e),
-            "traceback": traceback.format_exc(),
-        })
-
-
 @app.get("/")
 async def root(request: Request):
     """Redirect to the facility login page."""
