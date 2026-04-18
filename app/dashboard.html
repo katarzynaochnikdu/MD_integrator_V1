@@ -635,6 +635,10 @@
         <div class="card">
           <div class="card-header">
             <h3>Ostatnie leady</h3>
+            <div style="display:flex;align-items:center;gap:0.6rem;">
+              <span id="recent-leads-updated" style="font-size:0.7rem;color:#6B7280;"></span>
+              <button class="btn btn-sm btn-outline" id="btn-refresh-leads" onclick="loadStats(true)" title="Odśwież">🔄 Odśwież</button>
+            </div>
           </div>
           <div class="table-wrap">
             <table>
@@ -950,7 +954,18 @@
       if (USER_ROLE) {
         await loadStats();
         await loadIntegrations();
+        startAutoRefresh();
       }
+    }
+
+    let _autoRefreshTimer = null;
+    function startAutoRefresh() {
+      if (_autoRefreshTimer) return;
+      _autoRefreshTimer = setInterval(() => {
+        if (document.visibilityState !== 'visible') return;
+        const onOverview = document.getElementById('sec-overview')?.classList.contains('active');
+        if (onOverview) loadStats();
+      }, 20000);
     }
 
     function setUser(user) {
@@ -969,7 +984,9 @@
     }
 
     // ─── Overview ───────────────────────────────────────
-    async function loadStats() {
+    async function loadStats(manual) {
+      const btn = document.getElementById('btn-refresh-leads');
+      if (manual && btn) { btn.disabled = true; btn.textContent = '⏳ Odświeżam…'; }
       let stats;
       if (DEMO) {
         stats = MOCK_STATS;
@@ -979,6 +996,9 @@
           stats = await resp.json();
         } catch { stats = { total_leads: 0, sent: 0, failed: 0, success_rate: 0, active_integrations: 0, total_integrations: 0, recent_leads: [] }; }
       }
+      const upd = document.getElementById('recent-leads-updated');
+      if (upd) upd.textContent = 'Zaktualizowano ' + new Date().toLocaleTimeString('pl-PL');
+      if (btn) { btn.disabled = false; btn.textContent = '🔄 Odśwież'; }
 
       document.getElementById('kpi-total').textContent = stats.total_leads;
       document.getElementById('kpi-sent').textContent = stats.sent;
