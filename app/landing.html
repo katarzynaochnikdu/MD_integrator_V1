@@ -130,12 +130,18 @@
 
     <!-- Not logged in -->
     <div class="login-card" id="login-card">
-      <button class="btn btn-fb" id="btn-login">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
-        Zaloguj się
-      </button>
-      <div style="margin-top:0.6rem; font-size:0.7rem; color:#52525b; line-height:1.5;">
-        💡 Jeśli Facebook wyświetli ekran „Połącz ponownie” — to normalne. Kliknij go, a system Cię rozpozna.
+      <div id="session-check-msg" style="display:none; text-align:center; padding:1.5rem 0;">
+        <span class="spinner" style="width:24px; height:24px; border-width:3px;"></span>
+        <div style="font-size:0.82rem; color:#a1a1aa; margin-top:0.8rem;">Sprawdzanie sesji…</div>
+      </div>
+      <div id="login-btn-area">
+        <button class="btn btn-fb" id="btn-login">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+          Zaloguj się
+        </button>
+        <div style="margin-top:0.6rem; font-size:0.7rem; color:#52525b; line-height:1.5;">
+          💡 Jeśli Facebook wyświetli ekran „Połącz ponownie” — to normalne. Kliknij go, a system Cię rozpozna.
+        </div>
       </div>
     </div>
 
@@ -184,6 +190,8 @@
     }
 
     if (sessionId) {
+      document.getElementById('login-btn-area').style.display = 'none';
+      document.getElementById('session-check-msg').style.display = 'block';
       tryRestoreSession(sessionId);
     }
 
@@ -195,6 +203,8 @@
         showLoggedIn(data.user);
       } catch (e) {
         localStorage.removeItem('md_fb_session');
+        document.getElementById('session-check-msg').style.display = 'none';
+        document.getElementById('login-btn-area').style.display = 'block';
       }
     }
 
@@ -206,6 +216,9 @@
     }
 
     document.getElementById('btn-login').addEventListener('click', () => {
+      const btn = document.getElementById('btn-login');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Przekierowanie do Facebook…';
       window.location.href = '/auth/facebook?redirect=/dashboard';
     });
 
