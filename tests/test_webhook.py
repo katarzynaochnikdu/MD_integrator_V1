@@ -1,6 +1,10 @@
 """Tests for the Facebook webhook handler."""
+import hashlib
+import hmac
+import json
 from unittest.mock import AsyncMock, patch, MagicMock
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.config import settings
@@ -8,7 +12,31 @@ from app.main import app
 from app.fb_client import FBLead
 from app.integrations_store import FieldMapping, Integration
 
+TEST_APP_SECRET = "test_secret_for_webhook_signature"
+
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _set_fb_app_secret(monkeypatch):
+    """Ensure signature verification has a secret to compare against."""
+    monkeypatch.setattr(settings, "fb_app_secret", TEST_APP_SECRET)
+
+
+def _signed_post(path: str, payload: dict):
+    """POST JSON with a valid X-Hub-Signature-256 header."""
+    raw = json.dumps(payload).encode("utf-8")
+    sig = "sha256=" + hmac.new(
+        TEST_APP_SECRET.encode("utf-8"), raw, hashlib.sha256
+    ).hexdigest()
+    return client.post(
+        path,
+        content=raw,
+        headers={
+            "X-Hub-Signature-256": sig,
+            "Content-Type": "application/json",
+        },
+    )
 
 
 class TestWebhookVerify:
@@ -79,7 +107,7 @@ class TestWebhookHandler:
         from app.medidesk_client import MedideskResult
         mock_submit.return_value = MedideskResult(success=True, status_code=200)
 
-        resp = client.post("/webhook/facebook", json=self.LEADGEN_PAYLOAD)
+        resp = _signed_post("/webhook/facebook", self.LEADGEN_PAYLOAD)
         assert resp.status_code == 200
         assert resp.json()["processed"] == 1
 
@@ -93,14 +121,26 @@ class TestWebhookHandler:
     @patch("app.webhook.find_by_fb_page_and_form")
     def test_ignores_unknown_page(self, mock_find):
         mock_find.return_value = None
-        resp = client.post("/webhook/facebook", json=self.LEADGEN_PAYLOAD)
+        resp = _signed_post("/webhook/facebook", self.LEADGEN_PAYLOAD)
         assert resp.status_code == 200
         assert resp.json()["processed"] == 0
 
     def test_ignores_non_page_object(self):
-        resp = client.post("/webhook/facebook", json={"object": "user", "entry": []})
+        resp = _signed_post("/webhook/facebook", {"object": "user", "entry": []})
         assert resp.status_code == 200
         assert resp.json()["status"] == "ignored"
+
+    def test_rejects_missing_signature(self):
+        resp = client.post("/webhook/facebook", json=self.LEADGEN_PAYLOAD)
+        assert resp.status_code == 403
+
+    def test_rejects_bad_signature(self):
+        resp = client.post(
+            "/webhook/facebook",
+            json=self.LEADGEN_PAYLOAD,
+            headers={"X-Hub-Signature-256": "sha256=deadbeef"},
+        )
+        assert resp.status_code == 403
 
 
 class TestSetupPage:

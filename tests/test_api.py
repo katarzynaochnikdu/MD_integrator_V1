@@ -19,8 +19,13 @@ VALID_PAYLOAD = {
 
 
 class TestRoot:
-    def test_root_returns_200(self):
-        resp = client.get("/")
+    def test_root_redirects_to_login(self):
+        resp = client.get("/", follow_redirects=False)
+        assert resp.status_code in (302, 307)
+        assert resp.headers["location"].startswith("/login")
+
+    def test_api_info_returns_service(self):
+        resp = client.get("/api/info")
         assert resp.status_code == 200
         assert "Medidesk Integrator" in resp.json()["service"]
 

@@ -179,6 +179,44 @@ async def api_info():
     }
 
 
+@app.get("/debug/fb-config")
+async def debug_fb_config(session: dict = Depends(require_admin)):
+    """Admin-only diagnostic: verify all FB-related environment variables are set.
+
+    Never returns secret values — only presence/length, so it is safe to read over HTTPS
+    when troubleshooting why Facebook webhooks are rejected on production.
+    """
+    def _status(val: str) -> dict[str, Any]:
+        return {"set": bool(val), "length": len(val) if val else 0}
+
+    integrations = get_all_integrations()
+    active = [i for i in integrations if i.active]
+
+    return {
+        "fb_app_id": _status(settings.fb_app_id),
+        "fb_app_secret": _status(settings.fb_app_secret),
+        "fb_webhook_verify_token": _status(settings.fb_webhook_verify_token),
+        "fb_redirect_uri": settings.fb_redirect_uri,
+        "fb_graph_version": settings.fb_graph_version,
+        "encryption_key": _status(settings.encryption_key),
+        "integrations_total": len(integrations),
+        "integrations_active": len(active),
+        "active_pages": sorted({i.fb_page_id for i in active if i.fb_page_id}),
+        "blockers": [
+            msg for msg in [
+                "MEDIDESK_FB_APP_SECRET is NOT set — all webhooks return 403"
+                if not settings.fb_app_secret else "",
+                "MEDIDESK_FB_APP_ID is NOT set — OAuth/Graph calls will fail"
+                if not settings.fb_app_id else "",
+                "MEDIDESK_ENCRYPTION_KEY is NOT set — page tokens cannot be decrypted"
+                if not settings.encryption_key else "",
+                "No active integrations — webhook has no page to route leads to"
+                if not active else "",
+            ] if msg
+        ],
+    }
+
+
 @app.get("/api/forms/{form_id}/fields")
 async def get_form_fields(form_id: str):
     """Podgląd pól formularza Medidesk — pomocne przy tworzeniu mapowania."""
