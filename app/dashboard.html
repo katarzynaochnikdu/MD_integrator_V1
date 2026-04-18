@@ -918,9 +918,11 @@
     function setupRoleUI(role) {
       USER_ROLE = role;
       document.getElementById('sidebar-sub').textContent = role === 'admin' ? 'Panel administratora' : 'Panel placówki';
+      // Admin sees a badge so they know they're in admin mode; regular users don't
+      // need a "PLACÓWKA" tag — it's redundant with the sidebar sub-heading + facility chip.
       document.getElementById('user-role-badge').innerHTML = role === 'admin'
         ? '<span class="role-badge role-admin">ADMIN</span>'
-        : '<span class="role-badge role-user">PLACÓWKA</span>';
+        : '';
       // Show facilities nav + admin password change only for admin.
       // Hide "Nowa integracja" creation button for admin (admin manages, doesn't create).
       const newInt = document.getElementById('nav-new-integration');
