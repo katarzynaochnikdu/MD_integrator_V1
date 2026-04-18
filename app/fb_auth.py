@@ -556,6 +556,10 @@ async def get_current_user_endpoint(request: Request):
     session = get_session_from_cookie(request)
     if not session:
         return JSONResponse(status_code=401, content={"error": "Not logged in"})
+    # Derive the session_id back from the signed cookie so the setup wizard (which
+    # talks to legacy /session/{id} endpoints) can resume without a fresh OAuth hop.
+    cookie_raw = request.cookies.get(COOKIE_NAME)
+    session_id = _verify(cookie_raw) if cookie_raw else ""
     facility_id = session.get("facility_id", "")
     facility_name = session.get("facility_name", "")
     if facility_id:
@@ -591,6 +595,7 @@ async def get_current_user_endpoint(request: Request):
         "facility_id": facility_id,
         "facility_name": facility_name,
         "memberships": memberships,
+        "session_id": session_id,
     }
 
 

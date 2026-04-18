@@ -1029,6 +1029,15 @@
         await loadStats();
         await loadIntegrations();
         startAutoRefresh();
+
+        const params = new URLSearchParams(location.search);
+        const openId = params.get('integration');
+        if (openId) {
+          try { openRoom(openId); } catch {}
+          params.delete('integration');
+          const qs = params.toString();
+          history.replaceState({}, '', location.pathname + (qs ? '?' + qs : ''));
+        }
       }
     }
 
