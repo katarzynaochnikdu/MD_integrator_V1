@@ -56,7 +56,8 @@
     <div class="sub">Logowanie do panelu zarządzania</div>
     
     <div class="login-error" id="login-error"></div>
-    <input class="login-input" id="admin-password" type="password" placeholder="Hasło administratora" onkeydown="if(event.key==='Enter')adminLogin()" />
+    <input class="login-input" id="admin-email" type="email" placeholder="Email administratora" autocomplete="username" onkeydown="if(event.key==='Enter')adminLogin()" />
+    <input class="login-input" id="admin-password" type="password" placeholder="Hasło administratora" autocomplete="current-password" onkeydown="if(event.key==='Enter')adminLogin()" />
     <button class="login-btn" onclick="adminLogin()">Zaloguj się</button>
   </div>
 
@@ -76,13 +77,19 @@
     init();
 
     async function adminLogin() {
+      const email = document.getElementById('admin-email').value.trim();
       const pw = document.getElementById('admin-password').value;
       const errEl = document.getElementById('login-error');
+      if (!email) {
+        errEl.textContent = 'Podaj email administratora';
+        errEl.style.display = 'block';
+        return;
+      }
       try {
         const resp = await fetch('/auth/facebook/admin/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ password: pw }),
+          body: JSON.stringify({ email: email, password: pw }),
         });
         if (resp.ok) {
           window.location.href = '/dashboard';

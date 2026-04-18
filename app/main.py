@@ -797,6 +797,35 @@ async def get_lead_detail(lead_id: str, _session=Depends(require_auth)):
     return event
 
 
+@app.delete("/api/leads/{lead_id}")
+async def delete_lead(lead_id: str, request: Request, _session=Depends(require_auth)):
+    """Delete all events for a given lead from history.
+
+    Non-admin can only delete leads from integrations in their own facility.
+    """
+    from app.db import get_connection
+    conn = get_connection()
+    # Find all events for this lead
+    rows = conn.execute("SELECT integration_id FROM lead_events WHERE lead_id = ?", (lead_id,)).fetchall()
+    if not rows:
+        return JSONResponse(status_code=404, content={"error": "Lead not found"})
+
+    # Facility scoping: non-admin may only delete their own facility's leads.
+    if _session.get("role") != "admin":
+        facility_id = _session.get("facility_id", "")
+        if not facility_id:
+            return JSONResponse(status_code=403, content={"error": "Brak dostępu"})
+        for r in rows:
+            integ = get_integration(r["integration_id"])
+            if not integ or integ.facility_id != facility_id:
+                return JSONResponse(status_code=403, content={"error": "Brak dostępu do tego leada"})
+
+    conn.execute("DELETE FROM lead_events WHERE lead_id = ?", (lead_id,))
+    conn.commit()
+    _audit(request, _session, "lead.delete", after={"lead_id": lead_id})
+    return {"status": "deleted", "lead_id": lead_id}
+
+
 @app.post("/api/leads/{lead_id}/retry")
 async def retry_lead(lead_id: str, _session=Depends(require_auth)):
     """Retry sending a failed lead — rebuilds mapping from current integration config."""

@@ -514,16 +514,30 @@ async def get_session(session_id: str, request: Request):
 
 @router.get("/me")
 async def get_current_user_endpoint(request: Request):
-    """Get current logged-in user from cookie session."""
+    """Get current logged-in user from cookie session.
+
+    Facility name is refreshed from DB on each call so renames by admin are
+    reflected without requiring the user to log out and back in.
+    """
     session = get_session_from_cookie(request)
     if not session:
         return JSONResponse(status_code=401, content={"error": "Not logged in"})
+    facility_id = session.get("facility_id", "")
+    facility_name = session.get("facility_name", "")
+    if facility_id:
+        try:
+            from app.integrations_store import get_facility
+            fac = get_facility(facility_id)
+            if fac:
+                facility_name = fac.name
+        except Exception:
+            pass
     return {
         "user": session["user"],
         "pages": session.get("pages", []),
         "role": session.get("role", "user"),
-        "facility_id": session.get("facility_id", ""),
-        "facility_name": session.get("facility_name", ""),
+        "facility_id": facility_id,
+        "facility_name": facility_name,
     }
 
 
@@ -599,16 +613,19 @@ async def admin_login(request: Request):
     except Exception:
         return JSONResponse(status_code=400, content={"error": "Invalid JSON"})
 
+    email = (body.get("email") or "").strip().lower()
     password = body.get("password", "")
+    if not hmac.compare_digest(email.encode(), settings.admin_email.lower().encode()):
+        return JSONResponse(status_code=401, content={"error": "Nieprawidłowy email lub hasło"})
     stored = settings.admin_password
     # Support both bcrypt hash ($2b$...) and legacy plaintext passwords
     if stored.startswith("$2b$"):
         import bcrypt
         if not bcrypt.checkpw(password.encode(), stored.encode()):
-            return JSONResponse(status_code=401, content={"error": "Nieprawidłowe hasło"})
+            return JSONResponse(status_code=401, content={"error": "Nieprawidłowy email lub hasło"})
     else:
         if not hmac.compare_digest(password.encode(), stored.encode()):
-            return JSONResponse(status_code=401, content={"error": "Nieprawidłowe hasło"})
+            return JSONResponse(status_code=401, content={"error": "Nieprawidłowy email lub hasło"})
 
     session_data = {
         "user": {"name": "Administrator", "id": "admin"},

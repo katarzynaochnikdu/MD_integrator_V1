@@ -575,7 +575,9 @@
         <span class="icon">🏥</span> <span>Placówki</span>
       </div>
       <div class="nav-divider"></div>
-      <div class="nav-item" onclick="location.href='/setup'">
+      <!-- "Nowa integracja" is hidden for admin — admin manages existing accounts/facilities,
+           doesn't create integrations themselves. Shown below only for non-admin roles. -->
+      <div class="nav-item" id="nav-new-integration" onclick="location.href='/setup'" style="display:none;">
         <span class="icon">➕</span> <span>Nowa integracja</span>
       </div>
     </nav>
@@ -730,6 +732,23 @@
           <div id="facilities-list" style="font-size:0.82rem; color:#6B7280;"><em>Ładowanie...</em></div>
         </div>
 
+        <!-- Users per facility -->
+        <div class="card" style="margin-top:1rem;" id="users-card">
+          <div class="card-header">
+            <h3>👥 Użytkownicy placówek</h3>
+            <div style="display:flex;gap:0.4rem;align-items:center;">
+              <input type="text" id="users-filter" placeholder="🔍 Filtruj..." style="background:#FFFFFF;border:1px solid #E5E7EB;color:#111827;padding:0.35rem 0.6rem;border-radius:6px;font-size:0.78rem;width:180px;" oninput="renderUsers()" />
+              <select id="users-facility-filter" onchange="renderUsers()" style="background:#FFFFFF;border:1px solid #E5E7EB;color:#111827;padding:0.35rem 0.6rem;border-radius:6px;font-size:0.78rem;">
+                <option value="">Wszystkie placówki</option>
+              </select>
+            </div>
+          </div>
+          <div style="font-size:0.72rem; color:#52525b; margin-bottom:0.5rem;">
+            Wszyscy zalogowani przez FB. Zmień rolę, dodaj etykietę lub dezaktywuj.
+          </div>
+          <div id="users-list" style="font-size:0.82rem; color:#6B7280;"><em>Ładowanie...</em></div>
+        </div>
+
         <!-- Pending registrations -->
         <div class="card" style="margin-top:1rem; display:none;" id="pending-card">
           <div class="card-header">
@@ -863,10 +882,18 @@
       document.getElementById('user-role-badge').innerHTML = role === 'admin'
         ? '<span class="role-badge role-admin">ADMIN</span>'
         : '<span class="role-badge role-user">PLACÓWKA</span>';
-      // Show facilities nav and password change only for admin
+      // Show facilities nav + admin password change only for admin.
+      // Hide "Nowa integracja" creation button for admin (admin manages, doesn't create).
+      const newInt = document.getElementById('nav-new-integration');
+      const addFac = document.getElementById('btn-add-facility');
       if (role === 'admin') {
         document.getElementById('nav-facilities').style.display = 'flex';
         document.getElementById('btn-change-pw').style.display = 'block';
+        if (newInt) newInt.style.display = 'none';
+        if (addFac) addFac.style.display = 'none';
+      } else {
+        if (newInt) newInt.style.display = 'flex';
+        if (addFac) addFac.style.display = '';
       }
     }
 
@@ -1039,7 +1066,54 @@
         return (b[1][0].timestamp || '').localeCompare(a[1][0].timestamp || '');
       });
 
-      tbody.innerHTML = ordered.map(([leadId, attempts]) => {
+      // Now regroup lead-groups by integration_id, so each integration (form) becomes an
+      // accordion. Keep newest-first ordering inside each accordion and order accordions by
+      // their newest lead's timestamp.
+      const byIntegration = new Map();
+      for (const [leadId, attempts] of ordered) {
+        const integId = attempts[0].integration_id || '__unknown__';
+        if (!byIntegration.has(integId)) byIntegration.set(integId, []);
+        byIntegration.get(integId).push([leadId, attempts]);
+      }
+      const integAccordions = Array.from(byIntegration.entries()).sort((a, b) => {
+        const ta = a[1][0][1][0].timestamp || '';
+        const tb = b[1][0][1][0].timestamp || '';
+        return tb.localeCompare(ta);
+      });
+
+      const integLookup = new Map((allIntegrationsData || []).map(i => [i.id, i]));
+      function integLabel(id) {
+        if (id === '__unknown__') return 'Brak przypisanej integracji';
+        const i = integLookup.get(id);
+        if (!i) return id.substring(0, 8) + '…';
+        return i.name || `${i.fb_form_name || 'FB form'} → ${i.medidesk_form_name || 'Medidesk'}`;
+      }
+
+      // Render: one accordion header row per integration + nested lead rows. We reuse the
+      // same <tr> layout; the header row spans all columns and toggles its child rows.
+      let html = '';
+      integAccordions.forEach(([integId, leadGroups], accIdx) => {
+        const total = leadGroups.length;
+        const attemptsFlat = leadGroups.flatMap(([, arr]) => arr);
+        const sentUnique = leadGroups.filter(([, arr]) => arr.some(a => a.status === 'sent')).length;
+        const failedUnique = total - sentUnique;
+        const newestTs = leadGroups[0][1][0].timestamp;
+        const open = accIdx === 0; // newest accordion expanded by default
+        const accKey = 'acc-' + integId.replace(/[^a-zA-Z0-9]/g, '_');
+        html += `
+        <tr class="lead-acc-header" style="background:#F9FAFB;cursor:pointer;" onclick="toggleLeadAccordion('${accKey}', this)">
+          <td colspan="5" style="padding:0.7rem 1rem;">
+            <div style="display:flex;align-items:center;gap:0.6rem;">
+              <span class="acc-arrow" style="display:inline-block;transition:transform 0.15s;transform:rotate(${open ? 90 : 0}deg);color:#6B7280;">▶</span>
+              <span style="font-weight:600;color:#111827;">${integLabel(integId)}</span>
+              <span style="font-size:0.7rem;color:#6B7280;background:#FFFFFF;border:1px solid #E5E7EB;padding:2px 8px;border-radius:10px;">${total} ${total === 1 ? 'lead' : 'leadów'}</span>
+              ${sentUnique ? `<span style="font-size:0.7rem;color:#166534;background:#DCFCE7;padding:2px 8px;border-radius:10px;">✓ ${sentUnique}</span>` : ''}
+              ${failedUnique ? `<span style="font-size:0.7rem;color:#991B1B;background:#FEE2E2;padding:2px 8px;border-radius:10px;">✗ ${failedUnique}</span>` : ''}
+              <span style="margin-left:auto;font-size:0.7rem;color:#6B7280;">najnowszy: ${timeAgo(newestTs)}</span>
+            </div>
+          </td>
+        </tr>`;
+        html += leadGroups.map(([leadId, attempts]) => {
         const latest = attempts[0];
         const count = attempts.length;
         const sentCount = attempts.filter(a => a.status === 'sent').length;
@@ -1051,14 +1125,14 @@
           ? `<div style="font-size:0.68rem;color:#6B7280;margin-top:2px;">${sentCount > 0 ? '✓ ' + sentCount + ' wysłane' : ''}${sentCount > 0 && failedCount > 0 ? ' · ' : ''}${failedCount > 0 ? '✗ ' + failedCount + ' nieudane' : ''}</div>`
           : '';
         return `
-        <tr class="lead-row" onclick="toggleRecentLeadDetail('${leadId}')">
-          <td style="font-family:monospace;font-size:0.72rem;">${leadId.substring(0, 18)}${countBadge}${summary}</td>
+        <tr class="lead-row ${accKey}" style="${open ? '' : 'display:none;'}" onclick="toggleRecentLeadDetail('${leadId}')">
+          <td style="font-family:monospace;font-size:0.72rem;padding-left:2.2rem;">${leadId.substring(0, 18)}${countBadge}${summary}</td>
           <td>${leadStatusBadge(latest.status)}</td>
           <td>${latest.mapped_fields_count || 0} ${polPole(latest.mapped_fields_count || 0)}</td>
           <td>${timeAgo(latest.timestamp)}</td>
           <td style="font-size:0.7rem;color:#6B7280;">${latest.integration_id?.substring(0, 8) || '—'}…</td>
         </tr>
-        <tr id="recent-detail-${leadId}" style="display:none;">
+        <tr id="recent-detail-${leadId}" class="${accKey}" style="display:none;">
           <td colspan="5">
             <div class="lead-detail">
               ${count > 1 ? `
@@ -1087,12 +1161,47 @@
                 </div>
               </div>
               ${latest.error ? `<div class="error-box">❌ ${latest.error}</div>` : ''}
-              ${latest.integration_id ? `<div style="margin-top:0.8rem;"><a href="#" onclick="openRoom('${latest.integration_id}');return false;" style="font-size:0.75rem;color:#3B82F6;">Otwórz integrację →</a></div>` : ''}
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.8rem;gap:0.6rem;">
+                ${latest.integration_id ? `<a href="#" onclick="event.stopPropagation();openRoom('${latest.integration_id}');return false;" style="font-size:0.75rem;color:#3B82F6;">Otwórz integrację →</a>` : '<span></span>'}
+                <button class="btn btn-sm btn-outline" style="color:#B91C1C;border-color:#FECACA;font-size:0.72rem;" onclick="event.stopPropagation();deleteLead('${leadId}')" title="Usuń z historii">🗑 Usuń z historii</button>
+              </div>
             </div>
           </td>
         </tr>
         `;
-      }).join('');
+        }).join('');
+      });
+      tbody.innerHTML = html;
+    }
+
+    function toggleLeadAccordion(accKey, headerEl) {
+      const rows = document.querySelectorAll('#recent-leads-body tr.' + accKey);
+      let anyHidden = false;
+      rows.forEach(r => { if (r.style.display === 'none') anyHidden = true; });
+      // If any hidden, show all main rows (but keep detail rows hidden unless user expands them).
+      rows.forEach(r => {
+        const isDetail = r.id && r.id.startsWith('recent-detail-');
+        if (anyHidden) {
+          r.style.display = isDetail ? 'none' : '';
+        } else {
+          r.style.display = 'none';
+        }
+      });
+      const arrow = headerEl.querySelector('.acc-arrow');
+      if (arrow) arrow.style.transform = anyHidden ? 'rotate(90deg)' : 'rotate(0deg)';
+    }
+
+    async function deleteLead(leadId) {
+      if (!confirm('Usunąć leada ' + leadId + ' z historii? Tej operacji nie da się cofnąć.')) return;
+      if (DEMO) { showToast('DEMO: usunięto (symulacja)', 'success'); return; }
+      try {
+        const resp = await apiFetch('/api/leads/' + encodeURIComponent(leadId), { method: 'DELETE' });
+        if (!resp.ok) { const d = await resp.json().catch(()=>({})); throw new Error(d.error || 'Błąd'); }
+        showToast('Lead usunięty z historii', 'success');
+        loadStats();
+        // Also refresh room view if we're in it
+        if (typeof currentRoomId !== 'undefined' && currentRoomId) loadRoomLeads(currentRoomId);
+      } catch (e) { showToast(e.message, 'error'); }
     }
 
     async function toggleRecentLeadDetail(leadId) {
@@ -1272,13 +1381,24 @@
               <p>Wybierz inny filtr lub <a style="color:#3B82F6;cursor:pointer;" onclick="setIntegrationsFilter('all')">pokaż wszystkie</a>.</p>
             </div>`;
         } else {
-          container.innerHTML = `
-            <div class="empty-state">
-              <div class="icon">🔗</div>
-              <h3>Jeszcze żadnego połączenia</h3>
-              <p>Zacznij od połączenia formularza Facebook z Medidesk — zajmie Ci to ~90 sekund.</p>
-              <button class="btn btn-primary" style="margin-top:1rem;" onclick="location.href='/setup'">➕ Utwórz pierwsze połączenie</button>
-            </div>`;
+          // Admin doesn't create integrations — only diagnoses. Show different empty state.
+          const isAdmin = (typeof USER_ROLE !== 'undefined' && USER_ROLE === 'admin');
+          if (isAdmin) {
+            container.innerHTML = `
+              <div class="empty-state">
+                <div class="icon">🔗</div>
+                <h3>Brak integracji</h3>
+                <p>Żadna placówka nie ma jeszcze podpiętej integracji. Placówki tworzą je samodzielnie po zalogowaniu przez Facebook.</p>
+              </div>`;
+          } else {
+            container.innerHTML = `
+              <div class="empty-state">
+                <div class="icon">🔗</div>
+                <h3>Jeszcze żadnego połączenia</h3>
+                <p>Zacznij od połączenia formularza Facebook z Medidesk — zajmie Ci to ~90 sekund.</p>
+                <button class="btn btn-primary" style="margin-top:1rem;" onclick="location.href='/setup'">➕ Utwórz pierwsze połączenie</button>
+              </div>`;
+          }
         }
         return;
       }
@@ -2104,8 +2224,129 @@
         document.getElementById('facilities-list').innerHTML = '<p style="color:#f87171;">Błąd: ' + e.message + '</p>';
       }
 
-      // Also load pending registrations
+      // Populate facility filter for users panel
+      try {
+        const sel = document.getElementById('users-facility-filter');
+        if (sel) {
+          const current = sel.value;
+          sel.innerHTML = '<option value="">Wszystkie placówki</option>' +
+            data.facilities.map(f => `<option value="${f.id}">${f.name}</option>`).join('');
+          sel.value = current;
+        }
+      } catch {}
+
+      // Also load pending registrations + users
       loadPending();
+      loadUsers();
+    }
+
+    // ─── Users (admin) ──────────────────────────────────
+    let _allUsers = [];
+    async function loadUsers() {
+      const list = document.getElementById('users-list');
+      if (!list) return;
+      if (DEMO) { list.innerHTML = '<p style="color:#52525b;padding:0.5rem;">DEMO: brak danych</p>'; return; }
+      try {
+        const resp = await apiFetch('/api/admin/users');
+        if (!resp.ok) { list.innerHTML = '<p style="color:#f87171;padding:0.5rem;">Brak uprawnień</p>'; return; }
+        const data = await resp.json();
+        _allUsers = data.users || [];
+        renderUsers();
+      } catch (e) {
+        list.innerHTML = '<p style="color:#f87171;">Błąd: ' + e.message + '</p>';
+      }
+    }
+
+    function renderUsers() {
+      const list = document.getElementById('users-list');
+      if (!list) return;
+      const q = (document.getElementById('users-filter')?.value || '').toLowerCase();
+      const facFilter = document.getElementById('users-facility-filter')?.value || '';
+      const users = _allUsers.filter(u => {
+        if (facFilter && u.facility_id !== facFilter) return false;
+        if (!q) return true;
+        return (u.fb_user_name || '').toLowerCase().includes(q)
+          || (u.email || '').toLowerCase().includes(q)
+          || (u.label || '').toLowerCase().includes(q)
+          || (u.facility_name || '').toLowerCase().includes(q);
+      });
+      if (users.length === 0) {
+        list.innerHTML = '<p style="color:#52525b;padding:0.8rem;text-align:center;">Brak użytkowników pasujących do filtra.</p>';
+        return;
+      }
+      const roles = ['owner','admin','user','viewer'];
+      let html = '<table style="width:100%;border-collapse:collapse;">' +
+        '<thead><tr style="color:#71717a;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.05em;">' +
+        '<th style="text-align:left;padding:0.5rem 0.7rem;">Użytkownik</th>' +
+        '<th style="text-align:left;padding:0.5rem 0.7rem;">Placówka</th>' +
+        '<th style="text-align:left;padding:0.5rem 0.7rem;">Rola</th>' +
+        '<th style="text-align:left;padding:0.5rem 0.7rem;">Etykieta</th>' +
+        '<th style="text-align:left;padding:0.5rem 0.7rem;">Ostatnio</th>' +
+        '<th></th>' +
+        '</tr></thead><tbody>';
+      users.forEach(u => {
+        const last = u.last_seen_at ? new Date(u.last_seen_at).toLocaleString('pl-PL') : '—';
+        const faded = u.active ? '' : 'opacity:0.5;';
+        const opts = roles.map(r => `<option value="${r}"${r === u.role ? ' selected' : ''}>${r}</option>`).join('');
+        html += `<tr style="${faded}border-bottom:1px solid #F3F4F6;">
+          <td style="padding:0.7rem;">
+            <div style="font-weight:600;color:#111827;">${u.fb_user_name || '—'}${u.active ? '' : ' <span style="font-size:0.65rem;color:#B45309;background:rgba(245,158,11,0.12);padding:0.1rem 0.35rem;border-radius:4px;">nieaktywny</span>'}</div>
+            <div style="font-size:0.7rem;color:#71717a;">${u.email || ''}</div>
+            <div style="font-family:monospace;font-size:0.65rem;color:#9CA3AF;">${u.fb_user_id}</div>
+          </td>
+          <td style="padding:0.7rem;color:#111827;">${u.facility_name || '<span style="color:#9CA3AF;font-style:italic;">—</span>'}</td>
+          <td style="padding:0.7rem;">
+            <select onchange="changeUserRole('${u.fb_user_id}', this.value)" style="background:#FFFFFF;border:1px solid #E5E7EB;color:#111827;padding:0.25rem 0.4rem;border-radius:5px;font-size:0.75rem;">${opts}</select>
+          </td>
+          <td style="padding:0.7rem;">
+            <input type="text" id="label-${u.fb_user_id}" value="${(u.label || '').replace(/"/g,'&quot;')}" placeholder="np. Aga — marketing"
+              onblur="saveUserLabel('${u.fb_user_id}', this.value)"
+              style="background:#FFFFFF;border:1px solid #E5E7EB;color:#111827;padding:0.25rem 0.45rem;border-radius:5px;font-size:0.75rem;width:160px;" />
+          </td>
+          <td style="padding:0.7rem;color:#52525b;font-size:0.72rem;">${last}</td>
+          <td style="padding:0.7rem;text-align:right;">
+            ${u.active
+              ? `<button class="btn btn-sm btn-outline" title="Dezaktywuj" style="color:#B45309;" onclick="deactivateUser('${u.fb_user_id}', '${(u.fb_user_name || '').replace(/'/g,"\\'")}')">⏸</button>`
+              : '<span style="font-size:0.7rem;color:#9CA3AF;">—</span>'}
+          </td>
+        </tr>`;
+      });
+      html += '</tbody></table>';
+      list.innerHTML = html;
+    }
+
+    async function changeUserRole(fbUserId, role) {
+      try {
+        const resp = await apiFetch(`/api/admin/users/${fbUserId}/role`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ role }),
+        });
+        if (!resp.ok) { const d = await resp.json().catch(()=>({})); throw new Error(d.error || 'Błąd'); }
+        showToast('Rola zmieniona na ' + role, 'success');
+        loadUsers();
+      } catch (e) { showToast(e.message, 'error'); }
+    }
+
+    async function saveUserLabel(fbUserId, label) {
+      try {
+        const resp = await apiFetch(`/api/admin/users/${fbUserId}/label`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ label }),
+        });
+        if (!resp.ok) { const d = await resp.json().catch(()=>({})); throw new Error(d.error || 'Błąd'); }
+      } catch (e) { showToast(e.message, 'error'); }
+    }
+
+    async function deactivateUser(fbUserId, name) {
+      if (!confirm(`Dezaktywować ${name || fbUserId}? Nie będzie mógł się zalogować.`)) return;
+      try {
+        const resp = await apiFetch(`/api/admin/users/${fbUserId}/deactivate`, { method: 'POST' });
+        if (!resp.ok) { const d = await resp.json().catch(()=>({})); throw new Error(d.error || 'Błąd'); }
+        showToast('Użytkownik dezaktywowany', 'success');
+        loadUsers();
+      } catch (e) { showToast(e.message, 'error'); }
     }
 
     async function loadPending() {
