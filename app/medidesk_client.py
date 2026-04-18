@@ -59,6 +59,27 @@ async def fetch_form_definition(form_id: str) -> FormDefinition | None:
     return FormDefinition(name=data.get("name", ""), fields=fields)
 
 
+# Hard fallbacks for siteDomain/siteUrl — Medidesk's API returns HTTP 500
+# when these arrive empty (their internal "web-form" handler dereferences a
+# null source identifier and crashes). Real-world incident: a Render env var
+# was set to "" and silently overrode the config defaults, sending leads
+# with `siteDomain=&siteUrl=` — every lead bounced. These constants ensure
+# we never POST blank values regardless of env-var state.
+_FALLBACK_SITE_DOMAIN = "facebook-leads"
+_FALLBACK_SITE_URL = "/lead"
+
+
+def _resolve_with_fallback(caller: str | None, configured: str | None, fallback: str) -> str:
+    """Pick the first non-blank candidate so siteDomain/siteUrl are never empty."""
+    for candidate in (caller, configured, fallback):
+        if candidate is None:
+            continue
+        s = str(candidate).strip()
+        if s:
+            return s
+    return fallback
+
+
 def build_urlencoded_body(
     fields_values: dict[str, str],
     site_domain: str | None = None,
@@ -71,10 +92,15 @@ def build_urlencoded_body(
     The `[` / `]` around fieldsValues stay literal — they're part of PHP-style
     array-param syntax and every standard parser (including Medidesk) decodes
     the key name back from its percent-encoded form.
+
+    siteDomain / siteUrl are coerced through _resolve_with_fallback so they
+    are never empty — Medidesk crashes with 500 on blank values.
     """
+    domain = _resolve_with_fallback(site_domain, settings.default_site_domain, _FALLBACK_SITE_DOMAIN)
+    url = _resolve_with_fallback(site_url, settings.default_site_url, _FALLBACK_SITE_URL)
     parts: list[str] = [
-        f"siteDomain={quote(site_domain or settings.default_site_domain, safe='')}",
-        f"siteUrl={quote(site_url or settings.default_site_url, safe='')}",
+        f"siteDomain={quote(domain, safe='')}",
+        f"siteUrl={quote(url, safe='')}",
     ]
     for key, value in fields_values.items():
         parts.append(
