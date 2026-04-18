@@ -2165,10 +2165,10 @@
         // Explicit "(checkbox)" / "(tekst)" suffix — the icon alone (🔒 vs 📝)
         // was too subtle when the FB label is identical between the pair.
         if (consentKind === 'text') {
-          displayName = `📝 ${labelTxt} (tekst)`;
+          displayName = labelTxt;
           chipStyle = 'border-style:dashed;border-color:rgba(99,102,241,0.5);color:#3730a3;background:rgba(99,102,241,0.06);';
         } else {
-          displayName = `🔒 ${labelTxt} (checkbox)`;
+          displayName = `☑ ${labelTxt}`;
           chipStyle = 'border-style:dashed;border-color:rgba(139,92,246,0.5);color:#5b21b6;background:rgba(139,92,246,0.06);';
         }
         const kindHint = consentKind === 'text'

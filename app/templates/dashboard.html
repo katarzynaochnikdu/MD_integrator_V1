@@ -2702,10 +2702,10 @@
         const consentKind = (fbQuestion && fbQuestion.consent_kind) || 'checkbox';
         const labelTxt = consentLabel || fbKey;
         if (consentKind === 'text') {
-          fbDisplay = '📝 ' + labelTxt + ' (treść)';
+          fbDisplay = labelTxt;
           chipExtraClass = 'is-consent-text';
         } else {
-          fbDisplay = '🔒 ' + labelTxt;
+          fbDisplay = '☑ ' + labelTxt;
           chipExtraClass = 'is-consent';
         }
         const kindHint = consentKind === 'text'
