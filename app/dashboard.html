@@ -1341,13 +1341,19 @@
         </tr>`;
         html += leadGroups.map(([leadId, attempts]) => {
         const latest = attempts[0];
-        const count = attempts.length;
+        // "Events" = everything the tracker logged (received / sent / failed).
+        // "Delivery attempts" = only actual POSTs to Medidesk (sent + failed).
+        // The badge counts delivery attempts so "2 prób" doesn't confuse the
+        // user into thinking we sent the lead twice when really it was
+        // received + sent-once.
+        const eventCount = attempts.length;
         const sentCount = attempts.filter(a => a.status === 'sent').length;
         const failedCount = attempts.filter(a => a.status === 'failed').length;
-        const countBadge = count > 1
-          ? `<span style="margin-left:6px;font-size:0.68rem;color:#6B7280;background:#F3F4F6;padding:2px 6px;border-radius:10px;">${count} prób</span>`
+        const deliveryCount = sentCount + failedCount;
+        const countBadge = deliveryCount > 1
+          ? `<span style="margin-left:6px;font-size:0.68rem;color:#6B7280;background:#F3F4F6;padding:2px 6px;border-radius:10px;" title="Wysyłek do Medidesk (bez liczenia odbioru z FB)">${deliveryCount} wysyłek</span>`
           : '';
-        const summary = count > 1
+        const summary = deliveryCount > 1
           ? `<div style="font-size:0.68rem;color:#6B7280;margin-top:2px;">${sentCount > 0 ? '✓ ' + sentCount + ' wysłane' : ''}${sentCount > 0 && failedCount > 0 ? ' · ' : ''}${failedCount > 0 ? '✗ ' + failedCount + ' nieudane' : ''}</div>`
           : '';
         return `
@@ -1361,13 +1367,13 @@
         <tr id="recent-detail-${leadId}" class="${accKey}" style="display:none;">
           <td colspan="5">
             <div class="lead-detail">
-              ${count > 1 ? `
+              ${eventCount > 1 ? `
                 <div style="margin-bottom:0.8rem;">
-                  <h4 style="margin:0 0 0.4rem 0;">🕒 Historia prób (${count})</h4>
+                  <h4 style="margin:0 0 0.4rem 0;">🕒 Historia zdarzeń (${eventCount}) · ${deliveryCount === 0 ? 'brak wysyłek' : deliveryCount + (deliveryCount === 1 ? ' wysyłka' : ' wysyłek')}</h4>
                   <div style="display:flex;flex-direction:column;gap:4px;">
                     ${attempts.map((a, idx) => `
                       <div style="display:flex;align-items:center;gap:8px;font-size:0.72rem;padding:4px 8px;background:${idx === 0 ? '#F9FAFB' : 'transparent'};border-radius:4px;">
-                        <span style="color:#9CA3AF;min-width:20px;">#${count - idx}</span>
+                        <span style="color:#9CA3AF;min-width:20px;">#${eventCount - idx}</span>
                         ${leadStatusBadge(a.status)}
                         <span style="color:#6B7280;">${timeAgo(a.timestamp)}</span>
                         ${a.error ? `<span style="color:#DC2626;font-size:0.68rem;">${(a.error || '').substring(0, 120)}</span>` : ''}
@@ -1902,11 +1908,14 @@
         tbody.innerHTML = orderedLeads.map(([leadId, attempts]) => {
           const finalStatus = leadFinalStatus(attempts);
           const latest = attempts[0];
-          const count = attempts.length;
+          // Same distinction as the overview list: delivery attempts count
+          // only sent+failed, events include "received" (lead intake from FB).
+          const eventCount = attempts.length;
           const sentCount = attempts.filter(a => a.status === 'sent').length;
           const failedCount = attempts.filter(a => a.status === 'failed').length;
-          const countBadge = count > 1
-            ? `<span style="margin-left:6px;font-size:0.68rem;color:#6B7280;background:#F3F4F6;padding:2px 6px;border-radius:10px;">${count} prób</span>`
+          const deliveryCount = sentCount + failedCount;
+          const countBadge = deliveryCount > 1
+            ? `<span style="margin-left:6px;font-size:0.68rem;color:#6B7280;background:#F3F4F6;padding:2px 6px;border-radius:10px;" title="Wysyłek do Medidesk">${deliveryCount} wysyłek</span>`
             : '';
           const statusBadge = leadStatusBadge(finalStatus);
           const errorText = finalStatus === 'failed' ? (latest.error || '—') : '—';
@@ -1926,13 +1935,13 @@
             <tr id="detail-${leadId}" style="display:none;">
               <td colspan="6">
                 <div class="lead-detail">
-                  ${count > 1 ? `
+                  ${eventCount > 1 ? `
                     <div style="margin-bottom:0.8rem;">
-                      <h4 style="margin:0 0 0.4rem 0;">🕒 Historia prób (${count}) ${sentCount > 0 ? '· ✓ ' + sentCount : ''}${failedCount > 0 ? ' · ✗ ' + failedCount : ''}</h4>
+                      <h4 style="margin:0 0 0.4rem 0;">🕒 Historia zdarzeń (${eventCount}) ${deliveryCount > 0 ? '· ' + deliveryCount + (deliveryCount === 1 ? ' wysyłka' : ' wysyłek') : '· brak wysyłek'}${sentCount > 0 ? ' · ✓ ' + sentCount : ''}${failedCount > 0 ? ' · ✗ ' + failedCount : ''}</h4>
                       <div style="display:flex;flex-direction:column;gap:4px;">
                         ${attempts.map((a, idx) => `
                           <div style="display:flex;align-items:center;gap:8px;font-size:0.72rem;padding:4px 8px;background:${idx === 0 ? '#F9FAFB' : 'transparent'};border-radius:4px;">
-                            <span style="color:#9CA3AF;min-width:20px;">#${count - idx}</span>
+                            <span style="color:#9CA3AF;min-width:20px;">#${eventCount - idx}</span>
                             ${leadStatusBadge(a.status)}
                             <span style="color:#6B7280;">${timeAgo(a.timestamp)}</span>
                             ${a.error ? `<span style="color:#DC2626;font-size:0.68rem;">${(a.error || '').substring(0, 160)}</span>` : ''}
@@ -2028,7 +2037,8 @@
         sent:     '<span style="background:#DCFCE7;color:#16A34A;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:500;">Wysłany</span>',
         success:  '<span style="background:#DCFCE7;color:#16A34A;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:500;">Wysłany</span>',
         failed:   '<span style="background:#FEE2E2;color:#DC2626;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:500;">Nieudane</span>',
-        received: '<span style="background:#FEF3C7;color:#D97706;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:500;">W kolejce</span>',
+        received: '<span style="background:#FEF3C7;color:#D97706;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:500;" title="Lead odebrany z FB (przed wysłaniem do MD)">Odebrano z FB</span>',
+        skipped_duplicate: '<span style="background:#E0E7FF;color:#4338CA;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:500;" title="Ten sam lead_id już trafił do MD — FB ponowił webhook, pominęliśmy żeby nie duplikować">Duplikat (pominięty)</span>',
         pending:  '<span style="background:#F3F4F6;color:#6B7280;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:500;">Oczekuje</span>',
       };
       return map[status] || `<span style="color:#6B7280;">${status}</span>`;

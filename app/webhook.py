@@ -259,6 +259,34 @@ async def handle_webhook(request: Request):
                 medidesk_form_id=integration.medidesk_form_id,
             )
 
+            # Idempotency guard: if FB re-delivers the same lead_id (happens
+            # when our response was slow or after their automatic retry window)
+            # we must NOT send it to Medidesk a second time — would create a
+            # duplicate record on MD side. Manual "Wyślij ponownie" from the UI
+            # goes through /api/leads/{id}/retry, which bypasses this check.
+            try:
+                from app.db import get_connection as _gc
+                already_sent = _gc().execute(
+                    "SELECT 1 FROM lead_events WHERE lead_id = ? AND integration_id = ? AND status = 'sent' LIMIT 1",
+                    (lead_id, integration.id),
+                ).fetchone()
+                if already_sent:
+                    logger.info(
+                        "Lead %s already delivered to MD form %s — skipping duplicate webhook",
+                        lead_id, integration.medidesk_form_id,
+                    )
+                    log_lead_event(
+                        integration_id=integration.id,
+                        lead_id=lead_id,
+                        status="skipped_duplicate",
+                        error="Already delivered to Medidesk — duplicate webhook ignored",
+                        medidesk_form_id=integration.medidesk_form_id,
+                    )
+                    continue
+            except Exception as exc:
+                # Don't let a tracker lookup failure block live lead processing.
+                logger.warning("Duplicate-check failed for lead %s: %s", lead_id, exc)
+
             # Fetch lead data from Facebook
             lead = await get_lead_data(lead_id, integration.fb_page_token)
             if not lead:

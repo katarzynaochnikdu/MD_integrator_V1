@@ -23,6 +23,19 @@ def _set_fb_app_secret(monkeypatch):
     monkeypatch.setattr(settings, "fb_app_secret", TEST_APP_SECRET)
 
 
+@pytest.fixture(autouse=True)
+def _clean_lead_events():
+    """Reset lead_events before each test. The webhook now has an idempotency
+    guard that skips leads already delivered (same lead_id + integration_id
+    + status='sent'), which meant rows lingering from a prior test run made
+    the lead look like a duplicate and the webhook skipped submission."""
+    from app.db import get_connection
+    conn = get_connection()
+    conn.execute("DELETE FROM lead_events")
+    conn.commit()
+    yield
+
+
 def _signed_post(path: str, payload: dict):
     """POST JSON with a valid X-Hub-Signature-256 header."""
     raw = json.dumps(payload).encode("utf-8")
