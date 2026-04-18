@@ -4,6 +4,8 @@ from __future__ import annotations
 import hashlib
 import hmac
 import logging
+from collections import deque
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Query, Request
@@ -16,6 +18,8 @@ from app.lead_tracker import log_lead_event
 from app.medidesk_client import submit_form_urlencoded
 
 logger = logging.getLogger(__name__)
+
+RECENT_ATTEMPTS: deque[dict[str, Any]] = deque(maxlen=20)
 
 
 def _verify_signature(payload: bytes, signature_header: str | None) -> bool:
@@ -52,31 +56,74 @@ async def verify_webhook(
     return PlainTextResponse("Verification failed", status_code=403)
 
 
+def _record_attempt(**fields: Any) -> None:
+    """Append a diagnostic record for the most recent webhook attempts."""
+    entry = {"timestamp": datetime.now(timezone.utc).isoformat(), **fields}
+    RECENT_ATTEMPTS.append(entry)
+
+
 @router.post("/facebook")
 async def handle_webhook(request: Request):
     """Handle incoming Facebook webhook events (leadgen)."""
-    # Verify webhook signature (HMAC-SHA256)
     raw_body = await request.body()
     signature = request.headers.get("X-Hub-Signature-256")
+    client_ip = request.client.host if request.client else ""
+    user_agent = request.headers.get("user-agent", "")
+
+    logger.info(
+        "Webhook POST received: ip=%s bytes=%d has_signature=%s ua=%s",
+        client_ip, len(raw_body), bool(signature), user_agent[:80],
+    )
+
     if not _verify_signature(raw_body, signature):
         logger.warning("Webhook signature verification FAILED")
+        _record_attempt(
+            client_ip=client_ip,
+            body_size=len(raw_body),
+            has_signature=bool(signature),
+            signature_valid=False,
+            response_status=403,
+            reject_reason="invalid_signature",
+        )
         return JSONResponse(status_code=403, content={"error": "Invalid signature"})
 
     try:
         body: dict[str, Any] = await request.json()
     except Exception:
+        _record_attempt(
+            client_ip=client_ip,
+            body_size=len(raw_body),
+            has_signature=bool(signature),
+            signature_valid=True,
+            response_status=400,
+            reject_reason="invalid_json",
+        )
         return JSONResponse(status_code=400, content={"error": "Invalid JSON"})
 
     obj = body.get("object")
     if obj != "page":
         logger.info("Webhook received non-page object: %s", obj)
+        _record_attempt(
+            client_ip=client_ip,
+            body_size=len(raw_body),
+            has_signature=bool(signature),
+            signature_valid=True,
+            response_status=200,
+            parsed_object=obj,
+            reject_reason="non_page_object",
+        )
         return JSONResponse(content={"status": "ignored"})
 
     entries = body.get("entry", [])
     processed = 0
+    page_ids_seen: list[str] = []
+    integrations_matched = 0
+    integrations_missed = 0
 
     for entry in entries:
         page_id = entry.get("id", "")
+        if page_id:
+            page_ids_seen.append(page_id)
         changes = entry.get("changes", [])
 
         for change in changes:
@@ -100,7 +147,9 @@ async def handle_webhook(request: Request):
             integration = find_by_fb_page_and_form(page_id, form_id)
             if not integration:
                 logger.warning("No active integration found for page %s", page_id)
+                integrations_missed += 1
                 continue
+            integrations_matched += 1
 
             # Log: received
             log_lead_event(
@@ -214,4 +263,25 @@ async def handle_webhook(request: Request):
                     medidesk_form_id=integration.medidesk_form_id,
                 )
 
+    _record_attempt(
+        client_ip=client_ip,
+        body_size=len(raw_body),
+        has_signature=bool(signature),
+        signature_valid=True,
+        response_status=200,
+        parsed_object=obj,
+        page_ids=page_ids_seen,
+        integrations_matched=integrations_matched,
+        integrations_missed=integrations_missed,
+        processed=processed,
+    )
     return JSONResponse(content={"status": "ok", "processed": processed})
+
+
+@router.get("/_debug/attempts")
+async def debug_webhook_attempts():
+    """Return the last N webhook attempts as recorded by the running process.
+
+    Public but non-sensitive — returns only delivery metadata, not lead payloads.
+    """
+    return {"count": len(RECENT_ATTEMPTS), "attempts": list(RECENT_ATTEMPTS)}
