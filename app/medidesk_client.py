@@ -119,6 +119,22 @@ async def submit_form_urlencoded(
     url = f"{settings.medidesk_api_base}/{form_id}"
     body = build_urlencoded_body(fields_values, site_domain, site_url)
 
+    # Mimic a real browser form submission: Medidesk's "web-form" handler
+    # (the path that shows up in 500 error responses) appears to require
+    # Origin/Referer headers — without them it bails to a 500. A normal HTML
+    # form posted from a browser would send these automatically, so we set
+    # them here to whatever we can derive from the configured Medidesk API
+    # base. User-Agent labels us so MD's logs can identify the integrator.
+    md_origin = "https://app.medidesk.io"
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(settings.medidesk_api_base)
+        if parsed.scheme and parsed.netloc:
+            md_origin = f"{parsed.scheme}://{parsed.netloc}"
+    except Exception:
+        pass
+    md_referer = f"{md_origin}/forms/{form_id}"
+
     async with httpx.AsyncClient(timeout=settings.http_timeout) as client:
         try:
             resp = await client.post(
@@ -128,7 +144,14 @@ async def submit_form_urlencoded(
                 # if a future caller passes raw bytes by accident, UTF-8 won't blow up
                 # on non-ASCII characters the way .encode("ascii") did (see Polish 'ę').
                 content=body.encode("utf-8"),
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                headers={
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Accept": "application/json, text/plain, */*",
+                    "Origin": md_origin,
+                    "Referer": md_referer,
+                    "User-Agent": "MedideskIntegrator/2.0 (+https://md-integrator-v1.onrender.com)",
+                    "X-Requested-With": "XMLHttpRequest",
+                },
             )
         except httpx.TimeoutException:
             logger.warning("Medidesk request timed out")
