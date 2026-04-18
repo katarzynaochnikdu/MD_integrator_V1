@@ -925,14 +925,14 @@
             
             if (role === 'unregistered') {
               // User logged in with FB but is not registered as a facility
-              setUser(data.user);
+              setUser(data.user, data.facility_name);
               const errEl = document.getElementById('unregistered-error');
               errEl.innerHTML = '⚠️ Twoje konto Facebook (<strong>' + (data.user.name || '') + '</strong>, ID: ' + (data.user.id || '') + ') nie jest jeszcze zatwierdzone jako placówka.<br/><br/>Powiedz administratorowi, że logowanie zakończyło się sukcesem, a wkrótce zatwierdzi Twój dostęp.';
               document.getElementById('unregistered-overlay').style.display = 'flex';
               return;
             }
             
-            setUser(data.user);
+            setUser(data.user, data.facility_name);
             USER_ROLE = role;
             USER_PAGES = (data.pages || []).map(p => p.page_id);
             setupRoleUI(USER_ROLE);
@@ -969,16 +969,32 @@
       }, 20000);
     }
 
-    function setUser(user) {
-      document.getElementById('user-initials').textContent = (user.name || '?')[0];
-      document.getElementById('user-name').textContent = user.name || 'Użytkownik';
-      document.getElementById('user-email').textContent = 'ID: ' + (user.id || '');
-      // Also fill topbar user info
+    function setUser(user, facilityName) {
+      const name = user.name || 'Użytkownik';
+      const fbId = user.id || '';
+      const initials = (name[0] || '?').toUpperCase();
+      document.getElementById('user-initials').textContent = initials;
+      document.getElementById('user-name').textContent = name;
+
+      const chipBase = 'display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;font-size:0.65rem;font-weight:500;margin-right:4px;margin-top:4px;white-space:nowrap;';
+      const chips = [];
+      if (fbId) chips.push(`<span style="${chipBase}background:#EEF2FF;color:#4338CA;" title="Facebook User ID">🆔 ${fbId}</span>`);
+      if (facilityName) chips.push(`<span style="${chipBase}background:#DCFCE7;color:#166534;" title="Placówka">🏥 ${facilityName}</span>`);
+      const emailEl = document.getElementById('user-email');
+      emailEl.innerHTML = chips.join('');
+      emailEl.style.marginTop = '0';
+
       const topbarUser = document.getElementById('topbar-user');
       if (topbarUser) {
+        const topChips = [];
+        if (facilityName) topChips.push(`<span style="${chipBase}background:#DCFCE7;color:#166534;">🏥 ${facilityName}</span>`);
+        if (fbId) topChips.push(`<span style="${chipBase}background:#EEF2FF;color:#4338CA;font-family:monospace;">${fbId}</span>`);
         topbarUser.innerHTML = `
-          <span style="font-size:0.82rem;color:#374151;font-weight:500;">${user.name || 'Użytkownik'}</span>
-          <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#3b82f6,#6366f1);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.8rem;color:#fff;">${(user.name || '?')[0]}</div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;line-height:1.2;">
+            <span style="font-size:0.82rem;color:#111827;font-weight:600;">${name}</span>
+            <div>${topChips.join('')}</div>
+          </div>
+          <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#3b82f6,#6366f1);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.8rem;color:#fff;">${initials}</div>
           <button onclick="doLogout()" style="padding:4px 12px;border:1px solid #E5E7EB;border-radius:6px;background:#fff;font-size:0.75rem;color:#374151;cursor:pointer;">Wyloguj</button>
         `;
       }

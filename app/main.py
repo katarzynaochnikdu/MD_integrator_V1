@@ -771,56 +771,70 @@ async def get_lead_detail(lead_id: str, _session=Depends(require_auth)):
 
 @app.post("/api/leads/{lead_id}/retry")
 async def retry_lead(lead_id: str, _session=Depends(require_auth)):
-    """Retry sending a failed lead to Medidesk using saved data."""
+    """Retry sending a failed lead — rebuilds mapping from current integration config."""
     from app.lead_tracker import get_lead_event, log_lead_event, mark_retried
+    from app.webhook import build_medidesk_fields
 
     event = get_lead_event(lead_id, status="failed")
     if not event:
         return JSONResponse(status_code=404, content={"error": "No failed event found for this lead"})
 
-    mapped_values = event.get("mapped_values", {})
+    fb_raw_data = event.get("fb_raw_data", {}) or {}
+    integration_id = event.get("integration_id", "")
     medidesk_form_id = event.get("medidesk_form_id", "")
+
+    integration = get_integration(integration_id) if integration_id else None
+
+    if integration and fb_raw_data:
+        # Rebuild payload with CURRENT mapping + type normalization
+        mapped_values = build_medidesk_fields(integration, fb_raw_data, {"lead_id": lead_id})
+        medidesk_form_id = integration.medidesk_form_id or medidesk_form_id
+    else:
+        # Fallback to saved snapshot (e.g. integration deleted)
+        mapped_values = event.get("mapped_values", {}) or {}
 
     if not mapped_values:
         return JSONResponse(status_code=400, content={
-            "error": "No saved mapped values to retry",
-            "fb_raw_data": event.get("fb_raw_data", {}),
+            "error": "No mapped values to retry (check mapping config)",
+            "fb_raw_data": fb_raw_data,
         })
 
     if not medidesk_form_id:
         return JSONResponse(status_code=400, content={"error": "No Medidesk form ID saved"})
 
-    # Retry the submission
     result = await submit_form_urlencoded(medidesk_form_id, mapped_values)
 
     if result.success:
         mark_retried(lead_id)
         log_lead_event(
-            integration_id=event["integration_id"],
+            integration_id=integration_id,
             lead_id=lead_id,
             status="sent",
             mapped_fields_count=len(mapped_values),
-            fb_raw_data=event.get("fb_raw_data", {}),
+            fb_raw_data=fb_raw_data,
             mapped_values=mapped_values,
             medidesk_form_id=medidesk_form_id,
         )
         return {"status": "sent", "lead_id": lead_id, "message": "Retry successful"}
 
     error_msg = f"Medidesk HTTP {result.status_code}"
+    if result.raw_text:
+        error_msg += f": {result.raw_text[:800]}"
     log_lead_event(
-        integration_id=event["integration_id"],
+        integration_id=integration_id,
         lead_id=lead_id,
         status="failed",
         mapped_fields_count=len(mapped_values),
         error=f"Retry failed: {error_msg}",
-        fb_raw_data=event.get("fb_raw_data", {}),
+        fb_raw_data=fb_raw_data,
         mapped_values=mapped_values,
         medidesk_form_id=medidesk_form_id,
     )
-    return JSONResponse(status_code=502, content={
+    return JSONResponse(status_code=200, content={
         "status": "failed",
         "lead_id": lead_id,
         "error": error_msg,
+        "mapped_values": mapped_values,
     })
 
 

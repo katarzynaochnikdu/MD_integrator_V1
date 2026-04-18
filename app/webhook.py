@@ -22,6 +22,74 @@ logger = logging.getLogger(__name__)
 RECENT_ATTEMPTS: deque[dict[str, Any]] = deque(maxlen=20)
 
 
+def build_medidesk_fields(
+    integration: Any,
+    fb_field_data: dict[str, str],
+    lead_meta: dict[str, Any] | None = None,
+) -> dict[str, str]:
+    """Map FB field data → Medidesk fields using integration mappings + type-aware normalization.
+
+    Shared by the live webhook path and the /retry endpoint so mapping edits take effect.
+    """
+    lead_meta = lead_meta or {}
+    fields_values: dict[str, str] = {}
+
+    sorted_mappings = sorted(
+        integration.field_mappings,
+        key=lambda m: (m.medidesk_field, m.fb_field),
+    )
+
+    for mapping in sorted_mappings:
+        fb_key = mapping.fb_field
+        if fb_key.startswith("__const:") and fb_key.endswith("__"):
+            fb_value = fb_key[8:-2]
+        elif fb_key.startswith("__CONST__"):
+            fb_value = fb_key[9:]
+        elif fb_key.startswith("__fb_"):
+            virtual_map = {
+                "__fb_form_name__": getattr(integration, "fb_form_name", "") or "",
+                "__fb_lead_date__": lead_meta.get("created_time")
+                or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M"),
+                "__fb_ad_name__": lead_meta.get("ad_name") or "",
+                "__fb_adset_name__": lead_meta.get("adset_name") or "",
+                "__fb_campaign_name__": lead_meta.get("campaign_name") or "",
+                "__fb_platform__": lead_meta.get("platform") or "",
+                "__fb_is_organic__": "tak" if lead_meta.get("is_organic") else "nie",
+                "__fb_lead_id__": lead_meta.get("lead_id") or "",
+            }
+            fb_value = virtual_map.get(fb_key, "")
+        else:
+            fb_value = fb_field_data.get(fb_key, "")
+
+        if fb_value:
+            if mapping.medidesk_field in fields_values:
+                fields_values[mapping.medidesk_field] += " " + fb_value
+            else:
+                fields_values[mapping.medidesk_field] = fb_value
+
+    md_field_by_id: dict[str, dict[str, Any]] = {
+        (f.get("fieldId") or f.get("id") or f.get("name")): f
+        for f in (getattr(integration, "medidesk_fields", None) or [])
+    }
+    for md_id, val in list(fields_values.items()):
+        md_meta = md_field_by_id.get(md_id) or {}
+        mtype = (md_meta.get("type") or "").lower()
+        sval = str(val).strip()
+        if mtype in ("checkbox", "boolean", "bool", "consent"):
+            if sval.lower() in ("true", "1", "yes", "tak", "on", "y", "t"):
+                fields_values[md_id] = "true"
+            elif sval.lower() in ("false", "0", "no", "nie", "off", "n", "f", ""):
+                fields_values[md_id] = "false"
+        elif mtype in ("select", "lista", "dropdown", "radio"):
+            options = md_meta.get("options") or []
+            if options and sval not in options:
+                match = next((o for o in options if str(o).lower() == sval.lower()), None)
+                if match is not None:
+                    fields_values[md_id] = str(match)
+
+    return fields_values
+
+
 def _verify_signature(payload: bytes, signature_header: str | None) -> bool:
     """Verify X-Hub-Signature-256 from Facebook using app_secret."""
     if not settings.fb_app_secret:
@@ -172,69 +240,19 @@ async def handle_webhook(request: Request):
                 )
                 continue
 
-            # Map FB fields to Medidesk fields (supports merge: multiple FB → one MD)
-            fields_values: dict[str, str] = {}
-
-            # Sort mappings so first_name comes before last_name (correct merge order)
-            sorted_mappings = sorted(
-                integration.field_mappings,
-                key=lambda m: (m.medidesk_field, m.fb_field),
+            fields_values = build_medidesk_fields(
+                integration,
+                lead.field_data,
+                {
+                    "created_time": lead.created_time,
+                    "ad_name": lead.ad_name,
+                    "adset_name": lead.adset_name,
+                    "campaign_name": lead.campaign_name,
+                    "platform": lead.platform,
+                    "is_organic": lead.is_organic,
+                    "lead_id": lead.lead_id,
+                },
             )
-
-            for mapping in sorted_mappings:
-                fb_key = mapping.fb_field
-
-                # Constant value: extract static text
-                if fb_key.startswith("__const:") and fb_key.endswith("__"):
-                    fb_value = fb_key[8:-2]  # strip __const: and __
-                elif fb_key.startswith("__CONST__"):
-                    # Legacy format from older dashboard mappings
-                    fb_value = fb_key[9:]
-
-                # Virtual fields: inject computed values from lead metadata
-                elif fb_key.startswith("__fb_"):
-                    from datetime import datetime, timezone
-                    virtual_map = {
-                        "__fb_form_name__": integration.fb_form_name,
-                        "__fb_lead_date__": lead.created_time or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M"),
-                        "__fb_ad_name__": lead.ad_name or "",
-                        "__fb_adset_name__": lead.adset_name or "",
-                        "__fb_campaign_name__": lead.campaign_name or "",
-                        "__fb_platform__": lead.platform or "",
-                        "__fb_is_organic__": "tak" if lead.is_organic else "nie",
-                        "__fb_lead_id__": lead.lead_id or "",
-                    }
-                    fb_value = virtual_map.get(fb_key, "")
-                else:
-                    fb_value = lead.field_data.get(fb_key, "")
-
-                if fb_value:
-                    if mapping.medidesk_field in fields_values:
-                        # Merge: append with space (e.g., first_name + last_name)
-                        fields_values[mapping.medidesk_field] += " " + fb_value
-                    else:
-                        fields_values[mapping.medidesk_field] = fb_value
-
-            # Type-aware normalization based on Medidesk field types
-            md_field_by_id: dict[str, dict[str, Any]] = {
-                (f.get("fieldId") or f.get("id") or f.get("name")): f
-                for f in (integration.medidesk_fields or [])
-            }
-            for md_id, val in list(fields_values.items()):
-                md_meta = md_field_by_id.get(md_id) or {}
-                mtype = (md_meta.get("type") or "").lower()
-                sval = str(val).strip()
-                if mtype in ("checkbox", "boolean", "bool", "consent"):
-                    if sval.lower() in ("true", "1", "yes", "tak", "on", "y", "t"):
-                        fields_values[md_id] = "true"
-                    elif sval.lower() in ("false", "0", "no", "nie", "off", "n", "f", ""):
-                        fields_values[md_id] = "false"
-                elif mtype in ("select", "lista", "dropdown", "radio"):
-                    options = md_meta.get("options") or []
-                    if options and sval not in options:
-                        match = next((o for o in options if str(o).lower() == sval.lower()), None)
-                        if match is not None:
-                            fields_values[md_id] = str(match)
 
             if not fields_values:
                 logger.warning("No mapped fields with values for lead %s", lead_id)
