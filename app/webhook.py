@@ -249,15 +249,18 @@ async def handle_webhook(request: Request):
                 processed += 1
             else:
                 logger.error(
-                    "Failed to send lead %s to Medidesk: status=%s",
-                    lead_id, result.status_code,
+                    "Failed to send lead %s to Medidesk: status=%s body=%s",
+                    lead_id, result.status_code, (result.raw_text or "")[:500],
                 )
+                error_msg = f"Medidesk HTTP {result.status_code}"
+                if result.raw_text:
+                    error_msg += f": {result.raw_text[:800]}"
                 log_lead_event(
                     integration_id=integration.id,
                     lead_id=lead_id,
                     status="failed",
                     mapped_fields_count=len(fields_values),
-                    error=f"Medidesk HTTP {result.status_code}",
+                    error=error_msg,
                     fb_raw_data=lead.field_data,
                     mapped_values=fields_values,
                     medidesk_form_id=integration.medidesk_form_id,
