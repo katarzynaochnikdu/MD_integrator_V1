@@ -1996,7 +1996,7 @@
         if (VIRT_LABELS[key]) return VIRT_LABELS[key];
         const q = getQuestion(key);
         if (q && q.is_consent) {
-          const icon = q.consent_kind === 'text' ? '📝' : '🔒';
+          const icon = q.consent_kind === 'text' ? '📝' : '✅';
           return `${icon} ${q.label || key}` + (q.consent_kind === 'text' ? ' (treść)' : '');
         }
         return key;
@@ -2011,9 +2011,11 @@
         const q = getQuestion(m.fb_field);
         if (q && q.is_consent) {
           const isText = q.consent_kind === 'text';
-          const baseKey = isText 
-            ? (m.fb_field.replace(/-tekst$|_tekst$|_text$/i, '') || m.fb_field)
-            : m.fb_field;
+          // Pair by medidesk_field: "Zgoda-1-tekst" → "Zgoda-1", "Zgoda-1" → "Zgoda-1"
+          const mdField = m.medidesk_field || '';
+          const baseKey = isText
+            ? mdField.replace(/-tekst$|_tekst$|_text$/i, '')
+            : mdField;
           if (!consentMap.has(baseKey)) consentMap.set(baseKey, []);
           // checkbox first, then text
           if (isText) consentMap.get(baseKey).push(m);
