@@ -2795,16 +2795,14 @@
       const unusedVirtuals = VIRTUAL_FIELDS.filter(vf => !mappedFb.has(vf.key));
       if (unusedVirtuals.length > 0) {
         const addRow = document.createElement('div');
-        addRow.style.cssText = 'display:grid;grid-template-columns:auto minmax(0,0.5fr) 32px minmax(0,1fr);align-items:center;gap:0.7rem;margin-top:0.8rem;';
+        addRow.style.cssText = 'display:grid;grid-template-columns:auto minmax(0,0.5fr) 32px minmax(0,1fr);align-items:center;gap:0.7rem;margin-top:0.8rem;padding:0.5rem;border:1px dashed rgba(209,213,219,0.4);border-radius:10px;';
         const opts = unusedVirtuals.map(vf => `<option value="${vf.key}">${vf.label}</option>`).join('');
         addRow.innerHTML = `
           <span style="visibility:hidden;font-size:0.72rem;padding:0.3rem 0.6rem;white-space:nowrap;border:1px solid transparent;border-radius:6px;">📌 stała</span>
-          <div style="padding:0.35rem 0.5rem;border:1px dashed rgba(209,213,219,0.5);border-radius:10px;min-width:0;">
-            <select id="add-virtual-select" style="width:100%;background:transparent;border:none;outline:none;color:var(--text-secondary);font-size:0.78rem;">
-              <option value="">🌐 Dodaj pole meta-danych...</option>
-              ${opts}
-            </select>
-          </div>
+          <select id="add-virtual-select" style="width:100%;background:var(--bg-surface);border:1px solid var(--border-primary);color:var(--text-secondary);padding:0.4rem 0.6rem;border-radius:6px;font-size:0.78rem;">
+            <option value="">🌐 Dodaj pole meta-danych...</option>
+            ${opts}
+          </select>
           <span></span>
           <button id="btn-add-virtual" class="btn btn-outline" style="font-size:0.75rem;padding:0.4rem 0.8rem;width:100%;" disabled>Dodaj</button>
         `;
@@ -2830,12 +2828,10 @@
 
       // "Add constant value" row
       const constRow = document.createElement('div');
-      constRow.style.cssText = 'display:grid;grid-template-columns:auto minmax(0,0.5fr) 32px minmax(0,1fr);align-items:center;gap:0.7rem;margin-top:0.5rem;';
+      constRow.style.cssText = 'display:grid;grid-template-columns:auto minmax(0,0.5fr) 32px minmax(0,1fr);align-items:center;gap:0.7rem;margin-top:0.5rem;padding:0.5rem;border:1px dashed rgba(209,213,219,0.4);border-radius:10px;';
       constRow.innerHTML = `
         <span style="visibility:hidden;font-size:0.72rem;padding:0.3rem 0.6rem;white-space:nowrap;border:1px solid transparent;border-radius:6px;">📌 stała</span>
-        <div style="padding:0.35rem 0.5rem;border:1px dashed rgba(209,213,219,0.5);border-radius:10px;min-width:0;">
-          <input type="text" id="const-value-input" placeholder="✏️ Stała wartość..." style="width:100%;background:transparent;border:none;outline:none;color:var(--text-primary);font-size:0.78rem;" />
-        </div>
+        <input type="text" id="const-value-input" placeholder="✏️ Stała wartość..." style="width:100%;background:var(--bg-surface);border:1px solid var(--border-primary);color:var(--text-primary);padding:0.4rem 0.6rem;border-radius:6px;font-size:0.78rem;" />
         <span></span>
         <button id="btn-add-const" class="btn btn-outline" style="font-size:0.75rem;padding:0.4rem 0.8rem;width:100%;" disabled>Dodaj</button>
       `;
@@ -3082,7 +3078,7 @@
       banner.innerHTML = `
         <div style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:8px;padding:0.6rem 0.8rem;margin:0.4rem 0;color:var(--text-primary);font-size:0.8rem;">
           <div style="color:#B45309;font-weight:600;margin-bottom:0.3rem;">⚠️ Zduplikowane mapowanie Medidesk</div>
-          <div style="color:var(--text-secondary);margin-bottom:0.3rem;">To samo pole Medidesk dostaje wartość z kilku pól FB — ostatnia wartość nadpisze poprzednie.</div>
+          <div style="color:var(--text-secondary);margin-bottom:0.3rem;">To samo pole Medidesk dostaje wartość z kilku pól FB — wartości zostaną sklejone spacją, w kolejności mapowania.</div>
           <ul style="margin:0;padding-left:1.2rem;">${items}</ul>
         </div>
       `;
