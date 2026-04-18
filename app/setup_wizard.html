@@ -959,14 +959,24 @@
     // Map raw MD field type to the same bucket vocabulary as FB so we can compare.
     function mdLogicalType(rawType) {
       const t = String(rawType || '').toLowerCase();
-      if (t.includes('email')) return 'email';
-      if (t.includes('phone') || t === 'tel') return 'phone';
-      if (t.includes('attach') || t === 'file') return 'attach';
-      if (t.includes('checkbox') || t === 'boolean' || t === 'bool' || t === 'consent') return 'checkbox';
-      if (t.includes('select') || t.includes('list') || t === 'dropdown' || t === 'radio') return 'select';
-      if (t.includes('area') || t === 'long_text' || t === 'textarea') return 'text_long';
-      if (t.includes('number') || t === 'int' || t === 'integer' || t === 'float') return 'number';
-      if (t.includes('date')) return 'date';
+      if (t.includes('email') || t === 'mail') return 'email';
+      if (t.includes('phone') || t === 'tel' || t === 'telefon') return 'phone';
+      if (t.includes('attach') || t === 'file' || t === 'plik' || t.includes('załącz')) return 'attach';
+      // Polish/MD-specific consent/boolean type names also map to checkbox —
+      // otherwise MD forms where user named fields "zgoda" or "statement"
+      // fall into the default text bucket and every CHECKBOX FB consent
+      // shows ⚠️ against them (false positive).
+      if (t.includes('checkbox') || t === 'boolean' || t === 'bool'
+          || t === 'consent' || t === 'zgoda' || t === 'statement'
+          || t === 'acceptance') return 'checkbox';
+      if (t.includes('select') || t.includes('list') || t === 'dropdown'
+          || t === 'radio' || t === 'lista' || t === 'wybor'
+          || t === 'wybór') return 'select';
+      if (t.includes('area') || t === 'long_text' || t === 'textarea'
+          || t === 'tekst_długi' || t === 'tekst długi') return 'text_long';
+      if (t.includes('number') || t === 'int' || t === 'integer'
+          || t === 'float' || t === 'liczba') return 'number';
+      if (t.includes('date') || t === 'data') return 'date';
       // Default: short text
       return 'text';
     }
@@ -1011,6 +1021,14 @@
 
       // FB szerszy niż MD (np. EMAIL → tekst) — OK, dane się zmieszczą.
       if ((fb === 'email' || fb === 'phone' || fb === 'date' || fb === 'number') && (md === 'text' || md === 'text_long')) {
+        return { level: 'ok' };
+      }
+
+      // Checkbox (true/false) → text/text_long/select — OK. User może mieć
+      // MD pole "Zgoda" jako text-type (przechowuje "true"/"false" jako string)
+      // albo jako lista "tak/nie" — to legitny wzorzec, nie zaskakuje, więc
+      // nie krzyczymy. Ważne zwłaszcza dla par consent (🔒 FB → MD text zgoda).
+      if (fb === 'checkbox' && (md === 'text' || md === 'text_long' || md === 'select')) {
         return { level: 'ok' };
       }
 
@@ -2171,7 +2189,11 @@
         const hint = optCompat.level === 'block' ? '  🚫'
                    : optCompat.level === 'warn'  ? '  ⚠️'
                    : '';
-        options.push(`<option value="${f.fieldId}"${sel}>${f.fieldId}${hint}</option>`);
+        // Show MD field type inline — when compat surprises the user ("but
+        // it's a boolean!"), the [typ] suffix reveals what MD actually
+        // reports this field as (e.g. [tekst krótki] vs expected [checkbox]).
+        const typeTag = f.type ? `  [${polishFieldType(f.type)}]` : '';
+        options.push(`<option value="${f.fieldId}"${sel}>${f.fieldId}${typeTag}${hint}</option>`);
       });
 
       // Compat for the *currently selected* MD field — drives the middle column icon.

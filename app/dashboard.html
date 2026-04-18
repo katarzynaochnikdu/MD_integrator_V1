@@ -2239,14 +2239,20 @@
     }
     function mdLogicalType(rawType) {
       const t = String(rawType || '').toLowerCase();
-      if (t.includes('email')) return 'email';
-      if (t.includes('phone') || t === 'tel') return 'phone';
-      if (t.includes('attach') || t === 'file') return 'attach';
-      if (t.includes('checkbox') || t === 'boolean' || t === 'bool' || t === 'consent') return 'checkbox';
-      if (t.includes('select') || t.includes('list') || t === 'dropdown' || t === 'radio') return 'select';
-      if (t.includes('area') || t === 'long_text' || t === 'textarea') return 'text_long';
-      if (t.includes('number') || t === 'int' || t === 'integer' || t === 'float') return 'number';
-      if (t.includes('date')) return 'date';
+      if (t.includes('email') || t === 'mail') return 'email';
+      if (t.includes('phone') || t === 'tel' || t === 'telefon') return 'phone';
+      if (t.includes('attach') || t === 'file' || t === 'plik' || t.includes('załącz')) return 'attach';
+      if (t.includes('checkbox') || t === 'boolean' || t === 'bool'
+          || t === 'consent' || t === 'zgoda' || t === 'statement'
+          || t === 'acceptance') return 'checkbox';
+      if (t.includes('select') || t.includes('list') || t === 'dropdown'
+          || t === 'radio' || t === 'lista' || t === 'wybor'
+          || t === 'wybór') return 'select';
+      if (t.includes('area') || t === 'long_text' || t === 'textarea'
+          || t === 'tekst_długi' || t === 'tekst długi') return 'text_long';
+      if (t.includes('number') || t === 'int' || t === 'integer'
+          || t === 'float' || t === 'liczba') return 'number';
+      if (t.includes('date') || t === 'data') return 'date';
       return 'text';
     }
     function checkTypeCompat(fbRaw, mdRaw) {
@@ -2271,6 +2277,11 @@
       if (md === 'email'    && fb !== 'email')    return { level: 'block', message: 'Pole email MD wymaga zwalidowanego adresu email z FB.' };
       if (md === 'phone'    && fb !== 'phone')    return { level: 'block', message: 'Pole telefon MD wymaga zwalidowanego numeru telefonu z FB.' };
       if ((fb === 'email' || fb === 'phone' || fb === 'date' || fb === 'number') && (md === 'text' || md === 'text_long')) {
+        return { level: 'ok' };
+      }
+      // Checkbox (true/false) → text/text_long/select = OK (downcast is legit).
+      // See setup_wizard comment — covers MD "Zgoda" fields stored as text.
+      if (fb === 'checkbox' && (md === 'text' || md === 'text_long' || md === 'select')) {
         return { level: 'ok' };
       }
       return { level: 'warn', message: 'Typy mogą się nie zgadzać.' };
@@ -2542,10 +2553,25 @@
       // old UI had; the compat icon tells the same story in fewer pixels.
       const mdFieldsArr = editState.integration.medidesk_fields || [];
       let mdOptions = `<option value="">— Nie mapuj —</option>`;
+      const polishType = (t) => {
+        const s = String(t || '').toLowerCase();
+        if (!s) return '';
+        if (s.includes('email') || s === 'mail') return 'email';
+        if (s.includes('phone') || s === 'tel' || s === 'telefon') return 'telefon';
+        if (s.includes('attach') || s === 'file') return 'załącznik';
+        if (s.includes('checkbox') || s === 'boolean' || s === 'bool' || s === 'consent') return 'checkbox';
+        if (s.includes('select') || s.includes('list') || s === 'dropdown' || s === 'radio') return 'lista';
+        if (s.includes('area') || s === 'long_text' || s === 'textarea') return 'tekst długi';
+        if (s.includes('text') || s === 'string' || s === 'short_answer') return 'tekst krótki';
+        if (s.includes('number') || s === 'int' || s === 'integer' || s === 'float') return 'liczba';
+        if (s.includes('date')) return 'data';
+        return s;
+      };
       mdFieldsArr.forEach(mdf => {
         const fieldKey = mdf.fieldId || mdf.id || mdf.name;
         const selAttr = fieldKey === mdFieldId ? ' selected' : '';
         const req = mdf.required ? ' *' : '';
+        const typeTag = mdf.type ? `  [${polishType(mdf.type)}]` : '';
         const allowed = (mdf.options && mdf.options.length)
           ? ` [${mdf.options.slice(0, 3).join('/')}${mdf.options.length > 3 ? '…' : ''}]`
           : '';
@@ -2553,7 +2579,9 @@
         const hint = optCompat.level === 'block' ? '  🚫'
                    : optCompat.level === 'warn'  ? '  ⚠️'
                    : '';
-        const label = (mdf.name || fieldKey) + req + allowed + hint;
+        // Show MD field type inline so the user can tell why a warning fired
+        // without having to guess at MD's internal type mapping.
+        const label = (mdf.name || fieldKey) + req + typeTag + allowed + hint;
         mdOptions += `<option value="${fieldKey}"${selAttr}>${label}</option>`;
       });
 
