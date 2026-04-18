@@ -544,18 +544,23 @@
 
   <div class="container">
 
+    <!-- Shared sticky context banner — accumulates selections across steps so you always
+         see what's being worked on without the large summary cards taking vertical space. -->
+    <div id="fb-sticky-banner" style="display:none;position:sticky;top:10px;z-index:20;margin-bottom:1rem;padding:0.6rem 0.9rem;background:#FFFFFF;border:1px solid #E5E7EB;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,0.04);">
+      <div style="display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;font-size:0.8rem;color:#111827;">
+        <div id="sticky-user" style="display:none;align-items:center;gap:0.45rem;"></div>
+        <span class="sticky-sep" style="color:#D1D5DB;display:none;">·</span>
+        <div id="sticky-page" style="display:none;align-items:center;gap:0.4rem;"></div>
+        <span class="sticky-sep" style="color:#D1D5DB;display:none;">·</span>
+        <div id="sticky-fbform" style="display:none;align-items:center;gap:0.4rem;"></div>
+        <span class="sticky-sep" style="color:#D1D5DB;display:none;">·</span>
+        <div id="sticky-mdform" style="display:none;align-items:center;gap:0.4rem;"></div>
+        <button class="btn btn-sm btn-outline" id="sticky-change" style="margin-left:auto;padding:0.28rem 0.7rem;font-size:0.72rem;">Zmień</button>
+      </div>
+    </div>
+
     <!-- STEP 1: Facebook -->
     <div class="step-panel active" id="step-1">
-      <!-- Sticky context banner — shows selected user + page once chosen, freeing space for the forms list below. -->
-      <div id="fb-sticky-banner" style="display:none;position:sticky;top:10px;z-index:20;margin-bottom:1rem;padding:0.65rem 1rem;background:#FFFFFF;border:1px solid #E5E7EB;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,0.04);">
-        <div style="display:flex;align-items:center;gap:0.8rem;flex-wrap:wrap;">
-          <div id="sticky-user" style="display:flex;align-items:center;gap:0.5rem;font-size:0.82rem;color:#111827;"></div>
-          <span style="color:#D1D5DB;">·</span>
-          <div id="sticky-page" style="display:flex;align-items:center;gap:0.4rem;font-size:0.82rem;color:#111827;"></div>
-          <button class="btn btn-sm btn-outline" id="sticky-change" style="margin-left:auto;padding:0.3rem 0.7rem;font-size:0.72rem;">Zmień</button>
-        </div>
-      </div>
-
       <div class="card" id="fb-login-card">
         <!-- Session-check placeholder — shown while we decide whether user is already logged in.
              Prevents the login button from flashing before a saved session resumes. -->
@@ -628,18 +633,7 @@
     <!-- STEP 3: Mapping -->
     <div class="step-panel" id="step-3">
       <div class="card">
-        <div class="form-summary">
-          <div class="form-summary-box">
-            <div class="label">Formularz FB Lead Ads</div>
-            <div class="title" id="map-fb-name">—</div>
-            <div class="sub" id="map-fb-sub"></div>
-          </div>
-          <div class="form-summary-box">
-            <div class="label">Formularz Medidesk</div>
-            <div class="title" id="map-md-name">—</div>
-            <div class="sub" id="map-md-sub"></div>
-          </div>
-        </div>
+        <!-- Form summary moved to shared sticky banner at top of page. -->
 
         <div style="margin-bottom:1rem;padding:0.8rem 1rem;background:rgba(59,130,246,0.06);border:1px solid rgba(59,130,246,0.25);border-radius:10px;">
           <label for="integration-name-input" style="display:block;font-size:0.78rem;color:#93c5fd;font-weight:600;margin-bottom:0.4rem;">Nazwa integracji</label>
@@ -818,6 +812,56 @@
       if (box) box.style.display = '';
     }
 
+    // Populate the shared sticky banner from current state. Each slot is hidden until
+    // its value is known so the banner grows progressively as the user advances.
+    function updateStickyBanner() {
+      const banner = document.getElementById('fb-sticky-banner');
+      if (!banner) return;
+      const slots = [
+        {
+          id: 'sticky-user',
+          html: state.user ? `<span style="width:18px;height:18px;border-radius:50%;background:linear-gradient(135deg,#3b82f6,#6366f1);display:inline-flex;align-items:center;justify-content:center;font-size:0.65rem;font-weight:700;color:#FFFFFF;">${(state.user.name||'?')[0]}</span><span style="font-weight:600;">${state.user.name || 'FB'}</span>` : '',
+        },
+        {
+          id: 'sticky-page',
+          html: state.selectedPage ? `<span>📘</span><span style="font-weight:600;">${state.selectedPage.name}</span>` : '',
+        },
+        {
+          id: 'sticky-fbform',
+          html: state.selectedForm ? `<span>📄</span><span style="font-weight:600;">${state.selectedForm.name}</span><span style="color:#6B7280;font-size:0.72rem;">(${(state.selectedForm.questions||[]).length} pól)</span>` : '',
+        },
+        {
+          id: 'sticky-mdform',
+          html: state.mdFormId ? `<span>🎯</span><span style="font-weight:600;">${state.mdFormName || state.mdFormId}</span><span style="color:#6B7280;font-size:0.72rem;">${state.mdFormId.substring(0,8)}…</span>` : '',
+        },
+      ];
+      let anyShown = false;
+      slots.forEach(s => {
+        const el = document.getElementById(s.id);
+        if (!el) return;
+        if (s.html) { el.innerHTML = s.html; el.style.display = 'flex'; anyShown = true; }
+        else { el.innerHTML = ''; el.style.display = 'none'; }
+      });
+      // Show separators only between visible populated slots.
+      const children = Array.from(banner.querySelectorAll('.sticky-sep'));
+      const visibleIds = slots.filter(s => s.html).map(s => s.id);
+      const orderedIds = ['sticky-user','sticky-page','sticky-fbform','sticky-mdform'];
+      let sepIdx = 0;
+      for (let i = 0; i < orderedIds.length - 1; i++) {
+        const leftShown = visibleIds.includes(orderedIds[i]);
+        const rightShown = visibleIds.slice().some(id => orderedIds.indexOf(id) > i);
+        if (children[sepIdx]) children[sepIdx].style.display = (leftShown && rightShown) ? 'inline' : 'none';
+        sepIdx++;
+      }
+      banner.style.display = anyShown ? 'block' : 'none';
+    }
+
+    // "Zmień" — jump back to step 1 so user can pick a different page/form without losing login.
+    document.addEventListener('DOMContentLoaded', () => {
+      const btn = document.getElementById('sticky-change');
+      if (btn) btn.addEventListener('click', () => goToStep(1));
+    });
+
     // Check if returning from FB OAuth or resuming saved session
     const fbSession = params.get('fb_session');
     if (fbSession) {
@@ -907,6 +951,7 @@
     }
 
     function showLoggedInUI() {
+      updateStickyBanner();
       // Replace whole card (including the session-check spinner) with the logged-in summary.
       document.getElementById('fb-login-card').innerHTML = `
         <div style="display:flex;align-items:center;gap:0.8rem;padding:0.5rem;">
@@ -936,6 +981,8 @@
 
     async function selectPage(page) {
       state.selectedPage = page;
+      state.selectedForm = null;
+      updateStickyBanner();
       document.querySelectorAll('#pages-list .select-item').forEach(el => {
         el.classList.toggle('selected', el.dataset.id === page.page_id);
       });
@@ -1106,6 +1153,7 @@
 
     function selectForm(form) {
       state.selectedForm = form;
+      updateStickyBanner();
       document.querySelectorAll('#forms-list tr').forEach(el => {
         el.classList.toggle('selected-row', el.dataset.id === form.form_id);
       });
@@ -1184,6 +1232,7 @@
 
         document.getElementById('md-fields-card').style.display = 'block';
         document.getElementById('btn-step2-next').disabled = false;
+        updateStickyBanner();
         showToast('Pobrano ' + state.mdFields.length + ' pól', 'success');
       } catch (e) {
         showToast('Błąd: ' + e.message, 'error');
@@ -1201,10 +1250,7 @@
 
     // ─── Step 3: Mapping ────────────────────────────────
     async function buildMappingStep() {
-      document.getElementById('map-fb-name').textContent = state.selectedForm.name;
-      document.getElementById('map-fb-sub').textContent = (state.selectedForm.questions || []).length + ' pól';
-      document.getElementById('map-md-name').textContent = state.mdFormName;
-      document.getElementById('map-md-sub').textContent = 'ID: ' + state.mdFormId.substring(0, 13) + '…';
+      updateStickyBanner();
 
       // Integration name — autofill with sensible default but allow override.
       const nameInput = document.getElementById('integration-name-input');
@@ -1746,31 +1792,10 @@
           }
         }
 
-        // Show summary
-        document.getElementById('summary-details').innerHTML = `
-          <div style="text-align:left;display:inline-block;max-width:400px;">
-            <div style="margin-bottom:0.8rem;">
-              <span style="color:#52525b;font-size:0.72rem;">Strona FB</span><br/>
-              <span style="font-weight:600;">${state.selectedPage.name}</span>
-            </div>
-            <div style="margin-bottom:0.8rem;">
-              <span style="color:#52525b;font-size:0.72rem;">Formularz FB</span><br/>
-              <span style="font-weight:600;">${state.selectedForm.name}</span>
-            </div>
-            <div style="margin-bottom:0.8rem;">
-              <span style="color:#52525b;font-size:0.72rem;">Formularz Medidesk</span><br/>
-              <span style="font-weight:600;">${state.mdFormName}</span>
-              <span style="color:#52525b;font-size:0.72rem;display:block;">${state.mdFormId}</span>
-            </div>
-            <div>
-              <span style="color:#52525b;font-size:0.72rem;">Zmapowane pola</span><br/>
-              <span style="font-weight:600;">${state.mappings.length} pól</span>
-            </div>
-          </div>
-        `;
-
-        goToStep(4);
+        // Skip the intermediate success screen — go straight to dashboard with a toast.
         showToast(DEMO_MODE ? 'DEMO: Integracja aktywna! (symulacja)' : 'Integracja aktywna!', 'success');
+        setTimeout(() => { location.href = '/dashboard'; }, 700);
+        return;
       } catch (e) {
         setSaveStatus('error', 'Nie udało się zapisać integracji: ' + e.message);
         showToast('Błąd: ' + e.message, 'error');
