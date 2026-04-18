@@ -119,6 +119,9 @@ app = FastAPI(title=settings.app_name, version=settings.app_version)
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
+# Fix: Python 3.14 + Jinja2 LRUCache incompatibility (unhashable tuple+dict cache key)
+templates.env.auto_reload = True
+templates.env.cache = {}
 
 def render_template(request: Request, name: str, **kwargs):
     context = {
