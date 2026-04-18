@@ -775,7 +775,7 @@
           <div class="table-wrap">
             <table>
               <thead>
-                <tr><th>Lead ID</th><th>Status</th><th>Pola</th><th>Kiedy</th><th>Integracja</th></tr>
+                <tr><th>Integracja / Lead ID</th><th>Status</th><th>Pola</th><th>Kiedy</th><th>Integracja</th></tr>
               </thead>
               <tbody id="recent-leads-body">
                 <tr><td colspan="5" style="text-align:center;color:var(--text-dim);padding:1.5rem;">Ładowanie...</td></tr>
@@ -1343,7 +1343,11 @@
         if (id === '__unknown__') return 'Brak przypisanej integracji';
         const i = integLookup.get(id);
         if (!i) return id.substring(0, 8) + '…';
-        return i.name || `${i.fb_form_name || 'FB form'} → ${i.medidesk_form_name || 'Medidesk'}`;
+        // Prefer: name > "fb_form_name → medidesk" > fb_page_name > short ID
+        if (i.name) return i.name;
+        if (i.fb_form_name) return `${i.fb_form_name} → ${i.medidesk_form_name || 'Medidesk'}`;
+        if (i.fb_page_name) return `${i.fb_page_name} (formularz)`;
+        return 'Integracja ' + id.substring(0, 8) + '…';
       }
 
       // Render: one accordion header row per integration + nested lead rows. We reuse the
