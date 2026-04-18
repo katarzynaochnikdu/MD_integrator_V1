@@ -2198,6 +2198,7 @@
             <td style="text-align:right;">
               <div style="display:flex; gap:0.3rem; justify-content:flex-end;">
                 <button class="btn btn-sm btn-outline" style="border-color:#1e3a8a; color:#60a5fa;" onclick="openFacilityRoom('${f.id}', '${(f.name || '').replace(/'/g, "\\'")}')">🔍 Integracje</button>
+                <button class="btn btn-sm btn-outline" title="Generuj link zaproszenia" style="color:#7c3aed;" onclick="createInvite('${f.id}', '${(f.name || '').replace(/'/g, "\\'")}')">✉️</button>
                 <button class="btn btn-sm btn-outline" title="Zmień nazwę" onclick="renameFac('${f.id}', '${(f.name || '').replace(/'/g, "\\'")}')">✏️</button>
                 <button class="btn btn-sm btn-outline" title="Zawieś wszystkie integracje" style="color:#B45309;" onclick="suspendFac('${f.id}', '${(f.name || '').replace(/'/g, "\\'")}')">⏸</button>
                 <button class="btn btn-sm btn-outline" title="Usuń" style="color:#f87171; border-color:#451a1d;" onclick="deleteFac('${f.id}', '${(f.name || '').replace(/'/g, "\\'")}')">🗑</button>
@@ -2274,7 +2275,12 @@
         list.innerHTML = '<p style="color:#52525b;padding:0.8rem;text-align:center;">Brak użytkowników pasujących do filtra.</p>';
         return;
       }
-      const roles = ['owner','admin','user','viewer'];
+      // Display 2 practical levels. 'owner' is kept as an alias of 'user' (identical permissions)
+      // so existing records don't break; admin role is only assignable via password login.
+      const roleOptions = [
+        { value: 'user', label: 'user — edycja integracji' },
+        { value: 'viewer', label: 'viewer — tylko podgląd' },
+      ];
       let html = '<table style="width:100%;border-collapse:collapse;">' +
         '<thead><tr style="color:#71717a;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.05em;">' +
         '<th style="text-align:left;padding:0.5rem 0.7rem;">Użytkownik</th>' +
@@ -2287,7 +2293,9 @@
       users.forEach(u => {
         const last = u.last_seen_at ? new Date(u.last_seen_at).toLocaleString('pl-PL') : '—';
         const faded = u.active ? '' : 'opacity:0.5;';
-        const opts = roles.map(r => `<option value="${r}"${r === u.role ? ' selected' : ''}>${r}</option>`).join('');
+        // Normalize legacy roles (owner/admin) into the two displayed options.
+        const displayRole = (u.role === 'viewer') ? 'viewer' : 'user';
+        const opts = roleOptions.map(r => `<option value="${r.value}"${r.value === displayRole ? ' selected' : ''}>${r.label}</option>`).join('');
         html += `<tr style="${faded}border-bottom:1px solid #F3F4F6;">
           <td style="padding:0.7rem;">
             <div style="font-weight:600;color:#111827;">${u.fb_user_name || '—'}${u.active ? '' : ' <span style="font-size:0.65rem;color:#B45309;background:rgba(245,158,11,0.12);padding:0.1rem 0.35rem;border-radius:4px;">nieaktywny</span>'}</div>
@@ -2444,6 +2452,36 @@
       } catch (e) {
         showToast(e.message, 'error');
       }
+    }
+
+    async function createInvite(facId, facName) {
+      const role = prompt(
+        `Zaproszenie do "${facName}"\n\nWpisz rolę:\n  • user   — może edytować integracje placówki\n  • viewer — tylko podgląd (bez edycji)`,
+        'user'
+      );
+      if (role === null) return;
+      const r = (role || '').trim().toLowerCase();
+      if (!['user','viewer'].includes(r)) {
+        showToast('Wpisz: user lub viewer', 'error');
+        return;
+      }
+      try {
+        const resp = await apiFetch(`/api/admin/facilities/${facId}/invites`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ role: r, expires_days: 7 }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || 'Błąd');
+        const url = data.url;
+        const expires = new Date(data.expires_at).toLocaleDateString('pl-PL');
+        try {
+          await navigator.clipboard.writeText(url);
+          showToast(`✅ Link skopiowany. Ważny do ${expires}.`, 'success');
+        } catch {
+          prompt(`Link zaproszenia (ważny do ${expires}) — skopiuj go:`, url);
+        }
+      } catch (e) { showToast(e.message, 'error'); }
     }
 
     async function renameFac(id, currentName) {

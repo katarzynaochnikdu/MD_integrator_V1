@@ -159,6 +159,19 @@ def _init_tables(conn: sqlite3.Connection) -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_users_facility ON users(facility_id);
 
+        CREATE TABLE IF NOT EXISTS facility_invites (
+            token TEXT PRIMARY KEY,
+            facility_id TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'user',
+            note TEXT DEFAULT '',
+            created_at TEXT NOT NULL,
+            created_by TEXT DEFAULT '',
+            expires_at TEXT NOT NULL,
+            used_at TEXT DEFAULT '',
+            used_by_fb_id TEXT DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS idx_invites_facility ON facility_invites(facility_id);
+
         CREATE TABLE IF NOT EXISTS integrations_audit (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ts REAL NOT NULL,

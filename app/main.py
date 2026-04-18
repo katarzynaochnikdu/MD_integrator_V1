@@ -1158,3 +1158,159 @@ async def admin_page():
     path = Path(__file__).resolve().parent / "admin_login.html"
     html = path.read_text(encoding="utf-8")
     return HTMLResponse(content=html)
+
+
+# ─── Facility invites (admin-generated join links) ─────────────────
+# Admin creates a token-link for a facility+role, sends it manually (e.g. via email)
+# to the invited person. When they open it and authenticate via FB, they are auto-assigned
+# to the facility with the specified role — skipping the "pending approval" gate.
+
+
+@app.post("/api/admin/facilities/{facility_id}/invites")
+async def create_invite(facility_id: str, request: Request, _session=Depends(require_admin)):
+    """Generate a time-limited invite link for a facility."""
+    import secrets
+    from datetime import datetime, timezone, timedelta
+    from app.db import get_connection
+    from app.integrations_store import get_facility
+
+    if not get_facility(facility_id):
+        return JSONResponse(status_code=404, content={"error": "Placówka nie istnieje"})
+
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+    role = (body.get("role") or "user").strip()
+    if role not in ("owner", "admin", "user", "viewer"):
+        return JSONResponse(status_code=400, content={"error": "Nieprawidłowa rola"})
+    note = (body.get("note") or "").strip()
+    days = int(body.get("expires_days") or 7)
+    days = max(1, min(days, 30))
+
+    token = secrets.token_urlsafe(24)
+    now = datetime.now(timezone.utc)
+    expires = now + timedelta(days=days)
+    created_by = (_session.get("user") or {}).get("id", "admin")
+
+    conn = get_connection()
+    conn.execute(
+        """INSERT INTO facility_invites
+           (token, facility_id, role, note, created_at, created_by, expires_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (token, facility_id, role, note, now.isoformat(), created_by, expires.isoformat()),
+    )
+    conn.commit()
+    _audit(request, _session, "invite.create",
+           after={"facility_id": facility_id, "role": role, "expires_at": expires.isoformat()})
+
+    base = str(request.base_url).rstrip("/")
+    return {
+        "token": token,
+        "url": f"{base}/invite/{token}",
+        "facility_id": facility_id,
+        "role": role,
+        "expires_at": expires.isoformat(),
+    }
+
+
+@app.get("/api/admin/invites")
+async def list_invites(_session=Depends(require_admin)):
+    """List all invites with facility name + status."""
+    from app.db import get_connection
+    from datetime import datetime, timezone
+    conn = get_connection()
+    rows = conn.execute("SELECT * FROM facility_invites ORDER BY created_at DESC").fetchall()
+    facilities = {f.id: f.name for f in get_all_facilities()}
+    now_iso = datetime.now(timezone.utc).isoformat()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["facility_name"] = facilities.get(d["facility_id"], "")
+        if d["used_at"]:
+            d["status"] = "used"
+        elif d["expires_at"] < now_iso:
+            d["status"] = "expired"
+        else:
+            d["status"] = "active"
+        out.append(d)
+    return {"invites": out}
+
+
+@app.delete("/api/admin/invites/{token}")
+async def revoke_invite(token: str, request: Request, _session=Depends(require_admin)):
+    """Revoke an invite (deletes it — used invites kept as audit)."""
+    from app.db import get_connection
+    conn = get_connection()
+    row = conn.execute("SELECT used_at FROM facility_invites WHERE token = ?", (token,)).fetchone()
+    if not row:
+        return JSONResponse(status_code=404, content={"error": "Invite not found"})
+    conn.execute("DELETE FROM facility_invites WHERE token = ?", (token,))
+    conn.commit()
+    _audit(request, _session, "invite.revoke", after={"token": token[:8] + "…"})
+    return {"status": "revoked"}
+
+
+@app.get("/invite/{token}", response_class=HTMLResponse, include_in_schema=False)
+async def invite_page(token: str):
+    """Public landing page for an invite link. Sets cookie + shows FB login button."""
+    from app.db import get_connection
+    from datetime import datetime, timezone
+    from app.integrations_store import get_facility
+
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT facility_id, role, expires_at, used_at FROM facility_invites WHERE token = ?",
+        (token,),
+    ).fetchone()
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    if not row:
+        body = "<h2>Link zaproszenia nieprawidłowy</h2><p>Sprawdź z administratorem.</p>"
+        return HTMLResponse(content=_invite_html(body), status_code=404)
+    if row["used_at"]:
+        body = "<h2>Link został już wykorzystany</h2><p>Jeśli potrzebujesz dostępu — poproś admina o nowe zaproszenie.</p>"
+        return HTMLResponse(content=_invite_html(body), status_code=410)
+    if row["expires_at"] < now_iso:
+        body = "<h2>Link wygasł</h2><p>Poproś admina o nowe zaproszenie.</p>"
+        return HTMLResponse(content=_invite_html(body), status_code=410)
+
+    fac = get_facility(row["facility_id"])
+    fac_name = fac.name if fac else "placówki"
+    role = row["role"]
+    body = f"""
+        <div class="icon">📘</div>
+        <h2>Dołącz do {fac_name}</h2>
+        <p>Zostałeś zaproszony jako <strong>{role}</strong>. Zaloguj się przez Facebook,
+           aby dokończyć dołączenie.</p>
+        <a class="btn" href="/auth/facebook?redirect=/dashboard">Zaloguj przez Facebook</a>
+        <p class="sub">Twoje konto FB zostanie automatycznie przypisane do placówki.</p>
+    """
+    resp = HTMLResponse(content=_invite_html(body))
+    # Cookie lives 30 minutes — enough to complete OAuth round-trip.
+    resp.set_cookie(
+        "md_invite", token, max_age=1800, httponly=True, samesite="lax", path="/",
+    )
+    return resp
+
+
+def _invite_html(body: str) -> str:
+    return f"""<!DOCTYPE html>
+<html lang="pl"><head><meta charset="UTF-8"/>
+<title>Zaproszenie — Medidesk Integrator</title>
+<style>
+  body {{ font-family: Inter, system-ui, sans-serif; background: #0a0c10; color: #e4e4e7;
+         display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }}
+  .box {{ background: #13141b; border: 1px solid #1e2030; border-radius: 16px;
+         padding: 2.5rem; max-width: 420px; text-align: center; }}
+  .icon {{ font-size: 2.5rem; margin-bottom: 0.5rem; }}
+  h2 {{ font-size: 1.2rem; margin: 0 0 0.6rem; }}
+  p {{ font-size: 0.88rem; color: #a1a1aa; line-height: 1.5; }}
+  p.sub {{ font-size: 0.72rem; color: #52525b; margin-top: 1rem; }}
+  .btn {{ display: inline-block; margin-top: 1rem; padding: 0.75rem 1.4rem;
+          background: #1877f2; color: #fff; border-radius: 8px; text-decoration: none;
+          font-weight: 600; font-size: 0.88rem; }}
+  .btn:hover {{ background: #156ad4; }}
+</style></head>
+<body><div class="box">{body}</div></body></html>"""

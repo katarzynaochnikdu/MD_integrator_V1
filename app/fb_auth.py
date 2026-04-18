@@ -420,10 +420,40 @@ async def _do_facebook_callback(request: Request):
     facility_id = facility.id if facility else ""
     facility_name = facility.name if facility else ""
 
+    # Consume an invite cookie, if present: pre-assigns the user to a facility + role so
+    # they skip the "unregistered / pending approval" gate on first login.
+    invite_token = request.cookies.get("md_invite", "")
+    invite_facility_id = ""
+    invite_role = ""
+    if invite_token:
+        try:
+            from app.db import get_connection
+            from datetime import datetime, timezone
+            conn = get_connection()
+            row = conn.execute(
+                "SELECT facility_id, role, expires_at, used_at FROM facility_invites WHERE token = ?",
+                (invite_token,),
+            ).fetchone()
+            if row and not row["used_at"] and row["expires_at"] > datetime.now(timezone.utc).isoformat():
+                invite_facility_id = row["facility_id"]
+                invite_role = row["role"] or "user"
+                conn.execute(
+                    "UPDATE facility_invites SET used_at = ?, used_by_fb_id = ? WHERE token = ?",
+                    (datetime.now(timezone.utc).isoformat(), fb_user_id, invite_token),
+                )
+                conn.commit()
+        except Exception:
+            logger.warning("Failed to consume invite token", exc_info=True)
+
     # Upsert: refresh name/email + touch last_seen_at. Promote to 'owner' only on
     # first-ever login of a facility owner (admin-managed role stays stable otherwise).
     existing = get_user(fb_user_id)
-    if existing is None and facility:
+    if invite_facility_id:
+        user_record = upsert_user(
+            fb_user_id=fb_user_id, fb_user_name=fb_user_name, email=fb_user_email,
+            facility_id=invite_facility_id, role=invite_role,
+        )
+    elif existing is None and facility:
         user_record = upsert_user(
             fb_user_id=fb_user_id, fb_user_name=fb_user_name, email=fb_user_email,
             facility_id=facility.id, role="owner",
@@ -490,6 +520,8 @@ async def _do_facebook_callback(request: Request):
     # Set cookie (stores only session_id, not sensitive data) and redirect
     response = RedirectResponse(redirect_url)
     set_session_cookie(response, session_id)
+    if invite_token:
+        response.delete_cookie("md_invite")
     return response
 
 
