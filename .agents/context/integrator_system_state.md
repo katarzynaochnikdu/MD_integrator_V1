@@ -13,18 +13,26 @@
 
 ## Ostatni deploy
 
-- **Commit**: `59e4b8c` — `docs: add project documentation`
+- **Commit**: `c1b1ddf` — `rename: prefix all agent files with integrator_`
 - **Wersja**: 2.0.0
 - **Python na Renderze**: 3.14 (UWAGA: ignoruje render.yaml!)
+
+## Aktywne Work Ordery
+
+| WO | Tytuł | Status | Plik |
+|---|---|---|---|
+| #001 | Dark Mode (Jasny/Ciemny/Systemowy) | 🔄 W trakcie | `.agents/work_orders/integrator_wo001_dark_mode.md` |
 
 ## Aktywne prace
 
 - [x] Refaktoring na Jinja2 + base.html
 - [x] Centralizacja metadanych (config.py)
 - [x] Fundament theme (CSS vars + JS)
-- [ ] Wdrożenie Dark Mode (zamiana hardcoded kolorów na CSS vars)
-- [ ] Przełącznik theme w UI (toggle w dashboardzie)
-- [ ] Weryfikacja czytelności komponentów w trybie ciemnym
+- [x] System agentów (.agents/)
+- [x] Dokumentacja projektu (docs/)
+- [ ] **WO#001**: Wdrożenie Dark Mode (zamiana hardcoded kolorów na CSS vars)
+- [ ] **WO#001**: Przełącznik theme w UI (toggle w dashboardzie)
+- [ ] **WO#001**: Weryfikacja czytelności komponentów w trybie ciemnym
 
 ## Znane problemy
 
