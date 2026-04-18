@@ -522,6 +522,61 @@
     .toast.success { background: #14532d; color: #86efac; border: 1px solid #16a34a; }
     .toast.error { background: #450a0a; color: #fca5a5; border: 1px solid #991b1b; }
 
+    /* ─── In-app dialog (replaces native confirm/alert/prompt) ─── */
+    .app-dialog-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(2px);
+      z-index: 9999;
+      display: flex; align-items: center; justify-content: center;
+      padding: 1rem;
+      animation: app-dialog-fade-in 0.15s ease-out;
+    }
+    @keyframes app-dialog-fade-in { from { opacity: 0; } to { opacity: 1; } }
+    .app-dialog {
+      background: #FFFFFF;
+      border: 1px solid #E5E7EB;
+      border-radius: 12px;
+      padding: 1.5rem;
+      width: 100%; max-width: 480px;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.06);
+      animation: app-dialog-pop-in 0.18s ease-out;
+    }
+    @keyframes app-dialog-pop-in {
+      from { opacity: 0; transform: scale(0.96) translateY(4px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    .app-dialog-title {
+      font-size: 1rem; font-weight: 700;
+      color: #111827; margin-bottom: 0.5rem;
+    }
+    .app-dialog-message {
+      font-size: 0.88rem; color: #374151;
+      line-height: 1.5; margin-bottom: 1rem;
+      white-space: pre-wrap; word-break: break-word;
+      max-height: 50vh; overflow-y: auto;
+    }
+    .app-dialog-input-wrap { margin-bottom: 1rem; }
+    .app-dialog-input-wrap input {
+      width: 100%; padding: 0.55rem 0.7rem;
+      background: #FFFFFF; border: 1px solid #E5E7EB;
+      border-radius: 6px; font-size: 0.85rem;
+      color: #111827; outline: none;
+      box-sizing: border-box;
+    }
+    .app-dialog-input-wrap input:focus { border-color: #3b82f6; }
+    .app-dialog-buttons {
+      display: flex; gap: 0.6rem; justify-content: flex-end;
+    }
+    /* Destructive action variant — used for delete/reset actions where the
+       primary CTA should signal danger. */
+    .app-dialog .btn-danger-confirm {
+      background: #DC2626;
+      border: 1px solid #DC2626;
+      color: #FFFFFF;
+    }
+    .app-dialog .btn-danger-confirm:hover { background: #B91C1C; }
+
     .spinner {
       display: inline-block;
       width: 14px; height: 14px;
@@ -896,6 +951,22 @@
   </div>
 
   <div class="toast" id="toast"></div>
+
+  <!-- In-app dialog (replaces native confirm/alert/prompt) — see appConfirm /
+       appAlert / appPrompt helpers below. Single overlay reused for all calls. -->
+  <div id="app-dialog-overlay" class="app-dialog-overlay" style="display:none;" role="dialog" aria-modal="true">
+    <div class="app-dialog">
+      <div class="app-dialog-title" id="app-dialog-title"></div>
+      <div class="app-dialog-message" id="app-dialog-message"></div>
+      <div class="app-dialog-input-wrap" id="app-dialog-input-wrap" style="display:none;">
+        <input type="text" id="app-dialog-input" autocomplete="off" />
+      </div>
+      <div class="app-dialog-buttons">
+        <button class="btn btn-outline" id="app-dialog-cancel">Anuluj</button>
+        <button class="btn btn-primary" id="app-dialog-ok">OK</button>
+      </div>
+    </div>
+  </div>
 
   <script>
     const params = new URLSearchParams(location.search);
@@ -1350,7 +1421,7 @@
     }
 
     async function deleteLead(leadId) {
-      if (!confirm('Usunąć leada ' + leadId + ' z historii? Tej operacji nie da się cofnąć.')) return;
+      if (!await appConfirm('Usunąć leada ' + leadId + ' z historii? Tej operacji nie da się cofnąć.', { title: 'Usuń lead z historii', danger: true, okLabel: 'Usuń' })) return;
       if (DEMO) { showToast('DEMO: usunięto (symulacja)', 'success'); return; }
       try {
         const resp = await apiFetch('/api/leads/' + encodeURIComponent(leadId), { method: 'DELETE' });
@@ -1654,7 +1725,7 @@
     }
 
     async function deleteIntegration(id) {
-      if (!confirm('Na pewno usunąć tę integrację?')) return;
+      if (!await appConfirm('Na pewno usunąć tę integrację? Wszystkie powiązane mapowania i historia leadów zostaną zachowane, ale integracja przestanie odbierać nowe leady.', { title: 'Usuń integrację', danger: true, okLabel: 'Usuń integrację' })) return;
       if (DEMO) { showToast('DEMO: Usunięto integrację', 'success'); return; }
       try {
         const resp = await apiFetch(`/api/integrations/${id}`, { method: 'DELETE' });
@@ -1992,6 +2063,126 @@
       toast.textContent = msg;
       toast.className = 'toast ' + type + ' show';
       setTimeout(() => toast.classList.remove('show'), 3500);
+    }
+
+    // ─── In-app dialog (replaces native confirm/alert/prompt) ───────────
+    // Returns a Promise:
+    //   appConfirm(msg, opts) → boolean (true on OK, false on Cancel/Esc/backdrop)
+    //   appAlert(msg, opts)   → true (single OK button)
+    //   appPrompt(msg, def, opts) → string on OK, null on Cancel
+    // Native dialogs were jarring (browser chrome, "Komunikat ze strony…"
+    // header) and inconsistent with the rest of the app — this matches.
+    let _appDialogResolver = null;
+    let _appDialogMode = 'confirm';
+
+    function _showAppDialog(opts) {
+      const overlay = document.getElementById('app-dialog-overlay');
+      const titleEl = document.getElementById('app-dialog-title');
+      const msgEl = document.getElementById('app-dialog-message');
+      const inputWrap = document.getElementById('app-dialog-input-wrap');
+      const inputEl = document.getElementById('app-dialog-input');
+      const okBtn = document.getElementById('app-dialog-ok');
+      const cancelBtn = document.getElementById('app-dialog-cancel');
+
+      _appDialogMode = opts.mode || 'confirm';
+
+      titleEl.textContent = opts.title || '';
+      titleEl.style.display = opts.title ? '' : 'none';
+      msgEl.textContent = opts.message || '';
+
+      if (_appDialogMode === 'prompt') {
+        inputWrap.style.display = '';
+        inputEl.value = opts.defaultInput || '';
+      } else {
+        inputWrap.style.display = 'none';
+      }
+
+      okBtn.textContent = opts.okLabel || 'OK';
+      cancelBtn.textContent = opts.cancelLabel || 'Anuluj';
+      cancelBtn.style.display = (_appDialogMode === 'alert') ? 'none' : '';
+
+      okBtn.className = 'btn btn-sm ' + (opts.danger ? 'btn-danger-confirm' : 'btn-primary');
+      cancelBtn.className = 'btn btn-sm btn-outline';
+
+      overlay.style.display = 'flex';
+      // Focus management — input gets focus in prompt mode, OK button otherwise.
+      setTimeout(() => {
+        if (_appDialogMode === 'prompt' && inputEl) {
+          inputEl.focus();
+          if (inputEl.select) inputEl.select();
+        } else if (okBtn) {
+          okBtn.focus();
+        }
+      }, 50);
+
+      return new Promise((resolve) => { _appDialogResolver = resolve; });
+    }
+
+    function _resolveAppDialog(okPressed) {
+      const overlay = document.getElementById('app-dialog-overlay');
+      const inputEl = document.getElementById('app-dialog-input');
+      overlay.style.display = 'none';
+      const r = _appDialogResolver;
+      _appDialogResolver = null;
+      if (!r) return;
+      if (_appDialogMode === 'prompt') {
+        r(okPressed ? (inputEl.value || '') : null);
+      } else if (_appDialogMode === 'alert') {
+        r(true);
+      } else {
+        r(!!okPressed);
+      }
+    }
+
+    // Wire handlers once. Click backdrop = cancel, Esc = cancel, Enter = OK.
+    document.addEventListener('DOMContentLoaded', () => {
+      const okBtn = document.getElementById('app-dialog-ok');
+      const cancelBtn = document.getElementById('app-dialog-cancel');
+      const inputEl = document.getElementById('app-dialog-input');
+      const overlay = document.getElementById('app-dialog-overlay');
+      if (!overlay) return;
+      okBtn.addEventListener('click', () => _resolveAppDialog(true));
+      cancelBtn.addEventListener('click', () => _resolveAppDialog(false));
+      overlay.addEventListener('mousedown', (e) => {
+        if (e.target === overlay) _resolveAppDialog(false);
+      });
+      document.addEventListener('keydown', (e) => {
+        if (overlay.style.display === 'none' || !_appDialogResolver) return;
+        if (e.key === 'Escape') { e.preventDefault(); _resolveAppDialog(false); }
+        if (e.key === 'Enter' && _appDialogMode !== 'alert') {
+          // For prompt: only when input has focus (so user can paste with Enter…
+          // unlikely, but allow click on OK still works via its native Enter handler).
+          // For confirm: anywhere.
+          e.preventDefault();
+          _resolveAppDialog(true);
+        }
+      });
+      if (inputEl) {
+        inputEl.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); _resolveAppDialog(true); }
+        });
+      }
+    });
+
+    function appConfirm(message, opts = {}) {
+      return _showAppDialog({
+        mode: 'confirm', message,
+        title: opts.title, danger: opts.danger,
+        okLabel: opts.okLabel, cancelLabel: opts.cancelLabel,
+      });
+    }
+    function appAlert(message, opts = {}) {
+      return _showAppDialog({
+        mode: 'alert', message,
+        title: opts.title, okLabel: opts.okLabel,
+      });
+    }
+    function appPrompt(message, defaultVal = '', opts = {}) {
+      return _showAppDialog({
+        mode: 'prompt', message,
+        title: opts.title, defaultInput: defaultVal,
+        okLabel: opts.okLabel, cancelLabel: opts.cancelLabel,
+      });
     }
 
     async function retryAllFailed(e) {
@@ -2894,11 +3085,15 @@
       const facs = (_allFacilities || []);
       if (facs.length === 0) { showToast('Brak placówek w systemie', 'error'); return; }
       const list = facs.map((f, i) => `${i+1}. ${f.name} (${f.id})`).join('\n');
-      const pick = prompt('Wybierz numer placówki do dodania:\n\n' + list);
+      const pick = await appPrompt('Wybierz numer placówki do dodania:\n\n' + list, '', { title: 'Dodaj placówkę', okLabel: 'Dalej' });
+      if (pick === null) return;
       const idx = parseInt(pick, 10) - 1;
-      if (isNaN(idx) || idx < 0 || idx >= facs.length) return;
-      const role = prompt('Rola (user / viewer):', 'user');
-      if (!role) return;
+      if (isNaN(idx) || idx < 0 || idx >= facs.length) {
+        showToast('Niepoprawny numer placówki', 'error');
+        return;
+      }
+      const role = await appPrompt('Rola dla "' + facs[idx].name + '" (user / viewer):', 'user', { title: 'Wybierz rolę', okLabel: 'Dodaj' });
+      if (role === null || !role.trim()) return;
       try {
         const resp = await apiFetch(`/api/admin/users/${fbUserId}/memberships`, {
           method: 'POST',
@@ -2912,7 +3107,7 @@
     }
 
     async function removeMembership(fbUserId, facilityId, facilityName) {
-      if (!confirm(`Odebrać dostęp do placówki "${facilityName}"?`)) return;
+      if (!await appConfirm(`Odebrać dostęp do placówki "${facilityName}"?`, { title: 'Odbierz dostęp', danger: true, okLabel: 'Odbierz' })) return;
       try {
         const resp = await apiFetch(`/api/admin/users/${fbUserId}/memberships/${facilityId}`, { method: 'DELETE' });
         if (!resp.ok) { const d = await resp.json().catch(()=>({})); throw new Error(d.error || 'Błąd'); }
@@ -2955,7 +3150,7 @@
     }
 
     async function deactivateUser(fbUserId, name) {
-      if (!confirm(`Dezaktywować ${name || fbUserId}? Nie będzie mógł się zalogować.`)) return;
+      if (!await appConfirm(`Dezaktywować ${name || fbUserId}? Nie będzie mógł się zalogować.`, { title: 'Dezaktywuj użytkownika', danger: true, okLabel: 'Dezaktywuj' })) return;
       try {
         const resp = await apiFetch(`/api/admin/users/${fbUserId}/deactivate`, { method: 'POST' });
         if (!resp.ok) { const d = await resp.json().catch(()=>({})); throw new Error(d.error || 'Błąd'); }
@@ -3021,7 +3216,7 @@
     }
 
     async function dismissPending(fbUserId) {
-      if (!confirm('Odrzucić to zgłoszenie?')) return;
+      if (!await appConfirm('Odrzucić to zgłoszenie?', { title: 'Odrzuć zgłoszenie', danger: true, okLabel: 'Odrzuć' })) return;
       try {
         await apiFetch('/api/facilities/pending/' + fbUserId, { method: 'DELETE' });
         showToast('Zgłoszenie odrzucone', 'success');
@@ -3062,9 +3257,10 @@
     }
 
     async function createInvite(facId, facName) {
-      const role = prompt(
+      const role = await appPrompt(
         `Zaproszenie do "${facName}"\n\nWpisz rolę:\n  • user   — może edytować integracje placówki\n  • viewer — tylko podgląd (bez edycji)`,
-        'user'
+        'user',
+        { title: 'Utwórz zaproszenie', okLabel: 'Wygeneruj link' }
       );
       if (role === null) return;
       const r = (role || '').trim().toLowerCase();
@@ -3086,13 +3282,19 @@
           await navigator.clipboard.writeText(url);
           showToast(`✅ Link skopiowany. Ważny do ${expires}.`, 'success');
         } catch {
-          prompt(`Link zaproszenia (ważny do ${expires}) — skopiuj go:`, url);
+          // Clipboard API blocked — fall back to showing the link in an
+          // input field the user can manually copy from.
+          await appPrompt(
+            `Link zaproszenia (ważny do ${expires}) — zaznacz i skopiuj:`,
+            url,
+            { title: 'Skopiuj link zaproszenia', okLabel: 'Zamknij' }
+          );
         }
       } catch (e) { showToast(e.message, 'error'); }
     }
 
     async function renameFac(id, currentName) {
-      const next = prompt('Nowa nazwa placówki:', currentName || '');
+      const next = await appPrompt('Nowa nazwa placówki:', currentName || '', { title: 'Zmień nazwę placówki', okLabel: 'Zapisz' });
       if (next === null) return;
       const name = next.trim();
       if (!name) { showToast('Nazwa nie może być pusta', 'error'); return; }
@@ -3110,7 +3312,7 @@
     }
 
     async function suspendFac(id, name) {
-      if (!confirm('Zawiesić placówkę "' + name + '"? Wszystkie jej aktywne integracje zostaną wyłączone — leady przestaną być przekazywane do Medidesk.')) return;
+      if (!await appConfirm('Zawiesić placówkę "' + name + '"? Wszystkie jej aktywne integracje zostaną wyłączone — leady przestaną być przekazywane do Medidesk.', { title: 'Zawieś placówkę', danger: true, okLabel: 'Zawieś' })) return;
       try {
         const resp = await apiFetch('/api/integrations');
         const data = await resp.json();
@@ -3129,7 +3331,7 @@
     }
 
     async function deleteFac(id, name) {
-      if (!confirm('Usunąć placówkę "' + name + '"? Integracje pozostaną, ale stracą przypisanie.')) return;
+      if (!await appConfirm('Usunąć placówkę "' + name + '"? Integracje pozostaną, ale stracą przypisanie.', { title: 'Usuń placówkę', danger: true, okLabel: 'Usuń' })) return;
       try {
         const resp = await apiFetch('/api/facilities/' + id, { method: 'DELETE' });
         if (!resp.ok) throw new Error('Błąd usuwania');
@@ -3173,8 +3375,8 @@
     }
 
     async function resetDatabase() {
-      if (!confirm('⚠️ UWAGA: To usunie WSZYSTKIE integracje, placówki i testowe dane! Jesteś absolutnie pewien?')) return;
-      if (!confirm('Ostatnie ostrzeżenie! Zresetować całą bazę?')) return;
+      if (!await appConfirm('⚠️ UWAGA: To usunie WSZYSTKIE integracje, placówki i testowe dane! Jesteś absolutnie pewien?', { title: 'Reset całej bazy', danger: true, okLabel: 'Tak, kontynuuj' })) return;
+      if (!await appConfirm('Ostatnie ostrzeżenie! Zresetować całą bazę?', { title: 'Ostatnia szansa', danger: true, okLabel: 'TAK — RESETUJ' })) return;
       try {
         const resp = await apiFetch('/api/admin/reset-db', { method: 'DELETE' });
         if (!resp.ok) throw new Error('Błąd podczas czyszczenia bazy');
