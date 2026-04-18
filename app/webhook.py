@@ -300,6 +300,26 @@ async def handle_webhook(request: Request):
                 )
                 continue
 
+            # Diagnostic: log the full FB lead payload so operators can verify
+            # in Render logs which fields FB actually delivered (especially
+            # useful for consents — FB Test Tool doesn't fill those, real
+            # leads do; this surfaces the difference). Searchable by lead_id.
+            try:
+                import json as _json
+                fd_keys = sorted(lead.field_data.keys())
+                logger.info(
+                    "FB lead payload lead=%s integration=%s field_count=%d keys=%s field_data=%s meta={ad=%s adset=%s campaign=%s platform=%s organic=%s}",
+                    lead_id,
+                    integration.id,
+                    len(fd_keys),
+                    fd_keys,
+                    _json.dumps(lead.field_data, ensure_ascii=False)[:1500],
+                    lead.ad_name, lead.adset_name, lead.campaign_name,
+                    lead.platform, lead.is_organic,
+                )
+            except Exception as exc:
+                logger.warning("Could not log FB payload for lead %s: %s", lead_id, exc)
+
             fields_values = build_medidesk_fields(
                 integration,
                 lead.field_data,
