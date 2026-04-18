@@ -241,7 +241,7 @@
       gap: 0.4rem;
       margin-top: 0.8rem;
       padding-top: 0.8rem;
-      border-top: 1px solid #1a1b25;
+      border-top: 1px solid var(--border-primary);
     }
 
     /* ─── Buttons ─── */
@@ -303,14 +303,14 @@
     .field-chip.fb {
       background: rgba(34, 197, 94, 0.1);
       border: 1px solid rgba(34, 197, 94, 0.35);
-      color: #166534;
+      color: #4ade80;
       font-weight: 600;
     }
     .field-chip.fb.is-virtual  { border-style: dashed; opacity: 0.9; }
     .field-chip.fb.is-const {
       border-style: dashed;
       border-color: #8b5cf6;
-      color: #6d28d9;
+      color: #a78bfa;
       background: rgba(139, 92, 246, 0.08);
     }
     /* Consent checkboxes pulled from FB legal_content / gdpr_consent. Dashed
@@ -319,7 +319,7 @@
     .field-chip.fb.is-consent {
       border-style: dashed;
       border-color: rgba(139, 92, 246, 0.5);
-      color: #5b21b6;
+      color: #a78bfa;
       background: rgba(139, 92, 246, 0.06);
     }
     .field-chip.fb.is-consent:hover { background: rgba(139, 92, 246, 0.12); }
@@ -328,7 +328,7 @@
     .field-chip.fb.is-consent-text {
       border-style: dashed;
       border-color: rgba(99, 102, 241, 0.5);
-      color: #3730a3;
+      color: #818cf8;
       background: rgba(99, 102, 241, 0.06);
     }
     .field-chip.fb.is-consent-text:hover { background: rgba(99, 102, 241, 0.12); }
@@ -434,7 +434,7 @@
       display: flex;
       justify-content: space-between;
       padding: 0.25rem 0;
-      border-bottom: 1px solid #1a1b25;
+      border-bottom: 1px solid var(--border-subtle);
     }
     .data-key { color: var(--text-muted); }
     .data-val { color: var(--text-primary); font-weight: 500; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
@@ -1538,11 +1538,11 @@
     function classifyIntegration(i) {
       const s = i.stats || { total: 0, sent: 0, failed: 0, last_lead_at: '' };
       if (!i.active) return { key: 'inactive', color: '#9CA3AF', bg: 'var(--border-subtle)', label: 'Wyłączona' };
-      if (s.failed > 0) return { key: 'error', color: '#DC2626', bg: '#FEF2F2', label: 'Problem' };
+      if (s.failed > 0) return { key: 'error', color: '#DC2626', bg: 'rgba(220,38,38,0.1)', label: 'Problem' };
       const lastTs = s.last_lead_at ? new Date(s.last_lead_at).getTime() : 0;
       const daysSince = lastTs ? (Date.now() - lastTs) / 86400000 : 999;
-      if (s.total > 0 && daysSince > 7) return { key: 'idle', color: '#F59E0B', bg: '#FFFBEB', label: 'Bez ruchu' };
-      return { key: 'ok', color: '#16A34A', bg: '#F0FDF4', label: 'Działa' };
+      if (s.total > 0 && daysSince > 7) return { key: 'idle', color: '#F59E0B', bg: 'rgba(245,158,11,0.1)', label: 'Bez ruchu' };
+      return { key: 'ok', color: '#16A34A', bg: 'rgba(22,163,74,0.1)', label: 'Działa' };
     }
 
     function relativeTime(iso) {
@@ -1690,7 +1690,7 @@
         } else {
           primaryCta = `<button class="btn btn-sm btn-outline" onclick="openRoom('${i.id}')">Otwórz →</button>`;
           const lastTxt = s.last_lead_at ? `ostatni ${relativeTime(s.last_lead_at)}` : 'gotowe na leady';
-          subText = `<span style="color:#166534;">${s.sent} dostarczonych · ${lastTxt}</span>`;
+          subText = `<span style="color:#4ade80;">${s.sent} dostarczonych · ${lastTxt}</span>`;
         }
 
         return `
@@ -1717,7 +1717,7 @@
             ${primaryCta}
             <div style="position:relative;">
               <button class="btn btn-sm btn-outline" style="padding:4px 8px;" onclick="toggleTileMenu('${i.id}', event)">⋯</button>
-              <div id="tile-menu-${i.id}" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:#fff;border:1px solid var(--border-primary);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.08);z-index:10;min-width:160px;padding:4px;">
+              <div id="tile-menu-${i.id}" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:var(--bg-surface);border:1px solid var(--border-primary);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);z-index:10;min-width:160px;padding:4px;">
                 <button style="display:block;width:100%;text-align:left;padding:8px 12px;background:transparent;border:none;font-size:0.8rem;color:var(--text-secondary);cursor:pointer;border-radius:4px;" onclick="openRoom('${i.id}')" onmouseover="this.style.background='var(--border-subtle)'" onmouseout="this.style.background='transparent'">📋 Szczegóły i leady</button>
                 <button style="display:block;width:100%;text-align:left;padding:8px 12px;background:transparent;border:none;font-size:0.8rem;color:var(--text-secondary);cursor:pointer;border-radius:4px;" onclick="toggleIntegration('${i.id}','${i.active?'deactivate':'activate'}')" onmouseover="this.style.background='var(--border-subtle)'" onmouseout="this.style.background='transparent'">${i.active?'⏸ Wyłącz':'▶ Włącz'}</button>
                 <div style="height:1px;background:var(--border-primary);margin:4px 0;"></div>
