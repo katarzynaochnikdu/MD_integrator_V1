@@ -534,14 +534,18 @@ async def deactivate_integration(integration_id: str, request: Request, _session
 
 
 @app.delete("/api/integrations/{integration_id}")
-async def remove_integration(integration_id: str, request: Request, _session=Depends(require_admin)):
-    """Delete an integration."""
+async def remove_integration(integration_id: str, request: Request, _session=Depends(require_write_role)):
+    """Delete an integration. Admin can delete any; facility owner can delete their own."""
     integration = get_integration(integration_id)
-    before = _integration_snapshot(integration) if integration else None
+    if not integration:
+        return JSONResponse(status_code=404, content={"error": "Integration not found"})
+    if not _check_integration_access(integration, _session):
+        return JSONResponse(status_code=403, content={"error": "Brak dostępu do tej integracji"})
+    before = _integration_snapshot(integration)
     if delete_integration(integration_id):
         _audit(request, _session, "integration.delete", integration_id=integration_id, before=before)
         return {"status": "deleted"}
-    return JSONResponse(status_code=404, content={"error": "Integration not found"})
+    return JSONResponse(status_code=500, content={"error": "Failed to delete integration"})
 
 
 # ─── Stats endpoints ──────────────────────────────────────────────
