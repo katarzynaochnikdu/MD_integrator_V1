@@ -538,7 +538,7 @@
   <!-- Topbar -->
   <header style="position:sticky;top:0;z-index:100;background:#fff;border-bottom:1px solid #E5E7EB;display:flex;justify-content:space-between;align-items:center;padding:0 24px;height:56px;">
     <div style="display:flex;align-items:center;gap:10px;">
-      <span style="font-size:20px;">🏥</span>
+      <img src="/static/icon.jpg" alt="" style="width:28px;height:28px;border-radius:6px;object-fit:cover;" />
       <span style="font-weight:600;font-size:15px;color:#111827;">Medidesk Integrator</span>
     </div>
     <div style="display:flex;align-items:center;gap:12px;" id="topbar-user"></div>
@@ -1343,7 +1343,7 @@
         tbody.innerHTML = leads.map(l => {
           const statusBadge = leadStatusBadge(l.status);
           const errorText = l.error || '—';
-          const retryBtn = l.status === 'failed' && (l.mapped_values && Object.keys(l.mapped_values).length > 0)
+          const retryBtn = l.status === 'failed'
             ? `<button class="btn btn-sm btn-success" onclick="retryLead('${l.lead_id}')">🔄 Powtórz</button>`
             : (l.status === 'failed' ? '<span style="font-size:0.68rem;color:#52525b;">brak danych</span>' : '');
 
