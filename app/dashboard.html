@@ -1270,10 +1270,9 @@
       const s = i.stats || { total: 0, sent: 0, failed: 0, last_lead_at: '' };
       if (!i.active) return { key: 'inactive', color: '#9CA3AF', bg: '#F3F4F6', label: 'Wyłączona' };
       if (s.failed > 0) return { key: 'error', color: '#DC2626', bg: '#FEF2F2', label: 'Problem' };
-      if (s.total === 0) return { key: 'empty', color: '#9CA3AF', bg: '#F3F4F6', label: 'Brak leadów' };
       const lastTs = s.last_lead_at ? new Date(s.last_lead_at).getTime() : 0;
       const daysSince = lastTs ? (Date.now() - lastTs) / 86400000 : 999;
-      if (daysSince > 7) return { key: 'idle', color: '#F59E0B', bg: '#FFFBEB', label: 'Bez ruchu' };
+      if (s.total > 0 && daysSince > 7) return { key: 'idle', color: '#F59E0B', bg: '#FFFBEB', label: 'Bez ruchu' };
       return { key: 'ok', color: '#16A34A', bg: '#F0FDF4', label: 'Działa' };
     }
 
