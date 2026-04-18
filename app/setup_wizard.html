@@ -2097,8 +2097,19 @@
         '__fb_lead_id__': '🔑 ID leada',
       };
 
+      // Look up the underlying FB question once — we need both the type (for
+      // compat checks) and the consent metadata (label, is_consent, consent_body).
+      const fbQuestion = (isConst || isVirtual)
+        ? null
+        : ((state.selectedForm && state.selectedForm.questions || [])
+            .find(q => (q.key || q.name || q.label) === fbField) || null);
+      const isConsent = !!(fbQuestion && fbQuestion.is_consent);
+      const consentBody = (fbQuestion && fbQuestion.consent_body) || '';
+      const consentLabel = (fbQuestion && fbQuestion.label) || '';
+
       let displayName;
       let chipStyle;
+      let chipTitle = '';
       if (isConst) {
         const constVal = fbField.replace('__const:', '').replace('__', '');
         displayName = `📌 ${constVal}`;
@@ -2106,16 +2117,26 @@
       } else if (isVirtual) {
         displayName = virtualLabels[fbField] || fbField;
         chipStyle = 'border-style:dashed;opacity:0.8;';
+      } else if (isConsent) {
+        // Consent checkbox surfaced from FB legal_content / gdpr_consent.
+        // Show 🔒 + the human label (not the cryptic key) and expose the full
+        // disclaimer text via tooltip so the user can copy it into a Medidesk
+        // notes field for compliance records.
+        displayName = `🔒 ${consentLabel || fbField}`;
+        chipStyle = 'border-style:dashed;border-color:rgba(139,92,246,0.5);color:#5b21b6;background:rgba(139,92,246,0.06);';
+        const tipParts = [`Zgoda z formularza FB${fbQuestion.is_required ? ' (wymagana)' : ''}`];
+        if (consentBody) tipParts.push('', consentBody);
+        chipTitle = tipParts.join('\n').replace(/"/g, '&quot;');
       } else {
         displayName = fbField;
         chipStyle = '';
       }
 
-      // Resolve raw FB type for this row (constants & virtuals are always free text).
+      // Raw type — synthesized consents already arrive with type "CHECKBOX",
+      // constants/virtuals are CUSTOM (free text).
       const fbRawType = (isConst || isVirtual)
         ? 'CUSTOM'
-        : ((state.selectedForm && state.selectedForm.questions || [])
-            .find(q => (q.key || q.name || q.label) === fbField) || {}).type;
+        : (fbQuestion && fbQuestion.type) || undefined;
 
       // Build MD field <select> — annotate each option with a compat hint so user
       // sees up-front which targets are clean / risky / blocked. Options stay
@@ -2146,9 +2167,16 @@
       if (compat.level === 'block') row.classList.add('has-type-block');
       else if (compat.level === 'warn') row.classList.add('has-type-warn');
 
+      // Consent chips get an extra "📋" copy-text button in the left meta column
+      // so user can grab the full disclaimer text into clipboard with one click
+      // (handy for pasting into a Medidesk notes/compliance field).
+      const leftMetaHtml = (isConsent && consentBody)
+        ? `<button class="btn-copy-consent" title="Skopiuj treść zgody do schowka" data-text="${consentBody.replace(/"/g, '&quot;')}" style="background:none;border:1px solid rgba(139,92,246,0.4);color:#8b5cf6;font-size:0.7rem;padding:4px 8px;border-radius:6px;cursor:pointer;white-space:nowrap;">📋 Tekst</button>`
+        : '';
+
       row.innerHTML = `
-        <div class="row-meta-left"></div>
-        <span class="field-chip fb" style="${chipStyle}">${displayName}</span>
+        <div class="row-meta-left">${leftMetaHtml}</div>
+        <span class="field-chip fb" style="${chipStyle}"${chipTitle ? ` title="${chipTitle}"` : ''}>${displayName}</span>
         <span class="mapping-arrow compat-${compat.level}" style="text-align:center;color:${cv.color};font-size:${compat.level === 'ok' ? '1rem' : '1.05rem'};cursor:${arrowTitle ? 'help' : 'default'};" title="${arrowTitle}">${cv.icon}</span>
         <select class="md-select" data-fb="${fbField}">${options.join('')}</select>
         <div class="row-meta">
@@ -2156,6 +2184,19 @@
           ${canRemove ? '<button class="btn-remove-row" title="Usuń" style="background:none;border:none;color:#71717a;cursor:pointer;font-size:1rem;padding:0.1rem 0.3rem;">×</button>' : ''}
         </div>
       `;
+
+      // Wire up the consent copy-to-clipboard button.
+      const copyBtn = row.querySelector('.btn-copy-consent');
+      if (copyBtn) copyBtn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const text = copyBtn.dataset.text || '';
+        try {
+          await navigator.clipboard.writeText(text);
+          showToast('Skopiowano treść zgody do schowka', 'success');
+        } catch {
+          showToast('Nie udało się skopiować — zaznacz w tooltipie', 'error');
+        }
+      });
 
       row.querySelector('.md-select').addEventListener('change', function() {
         // Toggle the dim state immediately for snappier feedback; full re-render happens

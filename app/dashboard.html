@@ -318,6 +318,16 @@
       color: #6d28d9;
       background: rgba(139, 92, 246, 0.08);
     }
+    /* Consent checkboxes pulled from FB legal_content / gdpr_consent. Dashed
+       purple to read as "compliance/legal", click cursor signals the copy
+       affordance, hover lifts the background a notch. */
+    .field-chip.fb.is-consent {
+      border-style: dashed;
+      border-color: rgba(139, 92, 246, 0.5);
+      color: #5b21b6;
+      background: rgba(139, 92, 246, 0.06);
+    }
+    .field-chip.fb.is-consent:hover { background: rgba(139, 92, 246, 0.12); }
 
     .mapping-arrow {
       color: #9CA3AF;
@@ -2199,13 +2209,24 @@
       row.className = 'mapping-row';
       row.dataset.key = fbKey;
 
+      // Look up the underlying FB question once — gives us type AND consent meta.
+      const fbQuestion = (isVirtual || fbKey.startsWith('__const:') || fbKey.startsWith('__CONST__'))
+        ? null
+        : ((editState.integration.fb_form_questions || [])
+            .find(q => (q.key || q.name || q.label) === fbKey) || null);
+      const isConsent = !!(fbQuestion && fbQuestion.is_consent);
+      const consentBody = (fbQuestion && fbQuestion.consent_body) || '';
+      const consentLabel = (fbQuestion && fbQuestion.label) || '';
+
       // Figure out what this FB field is:
       //   - "real" form question (e.g. "email")     → plain chip with the key
+      //   - consent checkbox from FB legal_content → 🔒 chip + tooltip with body
       //   - virtual meta field (__fb_ad_name__)      → nice label + dashed chip
       //   - user-typed constant (__const:foo__)      → purple dashed chip
       const isConst = fbKey.startsWith('__const:') || fbKey.startsWith('__CONST__');
       let fbDisplay = fbKey;
       let chipExtraClass = '';
+      let chipTitle = fbKey;  // default: hover shows raw key
       if (isConst) {
         if (fbKey.startsWith('__const:') && fbKey.endsWith('__')) fbDisplay = '📌 ' + fbKey.slice(8, -2);
         else fbDisplay = '📌 ' + fbKey.replace('__CONST__', '');
@@ -2213,13 +2234,23 @@
       } else if (isVirtual) {
         fbDisplay = (VIRTUAL_FIELDS.find(f => f.key === fbKey) || {}).label || fbKey;
         chipExtraClass = 'is-virtual';
+      } else if (isConsent) {
+        // Consent surfaced from FB legal_content / gdpr_consent. 🔒 prefix +
+        // full disclaimer body in tooltip; click-to-copy wired below.
+        fbDisplay = '🔒 ' + (consentLabel || fbKey);
+        chipExtraClass = 'is-consent';
+        const tipParts = [`Zgoda z formularza FB${fbQuestion.is_required ? ' (wymagana)' : ''}`];
+        if (consentBody) {
+          tipParts.push('', consentBody, '', '(kliknij chip aby skopiować tekst)');
+        }
+        chipTitle = tipParts.join('\n').replace(/"/g, '&quot;');
       }
 
-      // FB raw type — virtuals and constants are free-text, like setup_wizard treats them.
+      // FB raw type — synthesized consents already arrive as "CHECKBOX",
+      // virtuals/constants are CUSTOM (free text).
       const fbRawType = (isVirtual || isConst)
         ? 'CUSTOM'
-        : ((editState.integration.fb_form_questions || [])
-            .find(q => (q.key || q.name || q.label) === fbKey) || {}).type;
+        : (fbQuestion && fbQuestion.type) || undefined;
 
       // Build MD options: annotate each with ⚠️/🚫 against THIS row's FB type so
       // the user sees incompatibility before selecting. Keep the required "*" and
@@ -2255,11 +2286,25 @@
       const safeKey = fbKey.replace(/"/g, '&quot;');
 
       row.innerHTML = `
-        <span class="field-chip fb ${chipExtraClass}" title="${safeKey}">${fbDisplay}</span>
+        <span class="field-chip fb ${chipExtraClass}" title="${chipTitle}"${isConsent && consentBody ? ' style="cursor:copy;"' : ''}>${fbDisplay}</span>
         <span class="mapping-arrow compat-${compat.level}" style="color:${cv.color};cursor:${arrowTitle ? 'help' : 'default'};" title="${arrowTitle}">${cv.icon}</span>
         <select class="md-select">${mdOptions}</select>
         <div class="row-remove">${canRemove ? `<button type="button" title="Usuń" data-remove="${safeKey}">✕</button>` : ''}</div>
       `;
+
+      // Click-to-copy on consent chips: lets user grab the full disclaimer text
+      // for pasting into a Medidesk note/compliance field.
+      if (isConsent && consentBody) {
+        const chip = row.querySelector('.field-chip');
+        if (chip) chip.addEventListener('click', async () => {
+          try {
+            await navigator.clipboard.writeText(consentBody);
+            showToast('Skopiowano treść zgody', 'success');
+          } catch {
+            showToast('Nie udało się skopiować', 'error');
+          }
+        });
+      }
 
       const selectEl = row.querySelector('.md-select');
       selectEl.addEventListener('change', () => {

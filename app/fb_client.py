@@ -49,6 +49,66 @@ def _graph_url(path: str) -> str:
     return f"{GRAPH_BASE}/{settings.fb_graph_version}/{path}"
 
 
+def _extract_consent_questions(form: dict[str, Any]) -> list[dict[str, Any]]:
+    """Pull consent checkboxes out of FB Lead Form `legal_content` + `gdpr_consent`.
+
+    FB stores compliance/consent checkboxes separately from regular `questions`,
+    which means our setup wizard never showed them — but they DO arrive in the
+    lead's `field_data` payload, so without surfacing them the user has no way
+    to map them onto Medidesk fields. This helper synthesizes question entries
+    so the wizard can display + map them like any other field.
+
+    Each returned entry carries:
+      - `key`           — matches the field_data name FB sends with the lead
+      - `label`         — checkbox text shown to the lead
+      - `type`          — "CHECKBOX" so type-compat treats it like a bool
+      - `is_consent`    — UI flag: render with 🔒 icon, suggest `true` constant
+      - `is_required`   — if FB says the checkbox MUST be checked
+      - `consent_body`  — full disclaimer text the lead actually saw (may be
+                          long — UI exposes it via tooltip + copy-to-clipboard
+                          so the user can paste it into a Medidesk note field
+                          for compliance records).
+    """
+    out: list[dict[str, Any]] = []
+
+    # Path 1: legal_content.custom_disclaimer.checkboxes — most common shape.
+    legal = (form.get("legal_content") or {})
+    disclaimer = legal.get("custom_disclaimer") or form.get("custom_disclaimer") or {}
+    body = (disclaimer.get("body") or "").strip()
+    title = (disclaimer.get("title") or "").strip()
+    full_text = "\n".join(p for p in (title, body) if p)
+    for cb in (disclaimer.get("checkboxes") or []):
+        key = cb.get("key") or cb.get("name") or ""
+        if not key:
+            continue
+        out.append({
+            "key": key,
+            "label": cb.get("label") or cb.get("text") or key,
+            "type": "CHECKBOX",
+            "is_consent": True,
+            "is_required": bool(cb.get("is_required") or cb.get("required")),
+            "consent_body": full_text,
+        })
+
+    # Path 2: gdpr_consent.custom_consent[] — newer EU-region forms put GDPR
+    # checkboxes here, each with its own body. Same fields, different source.
+    gdpr = form.get("gdpr_consent") or {}
+    for c in (gdpr.get("custom_consent") or []):
+        key = c.get("key") or c.get("name") or ""
+        if not key:
+            continue
+        out.append({
+            "key": key,
+            "label": c.get("label") or c.get("text") or key,
+            "type": "CHECKBOX",
+            "is_consent": True,
+            "is_required": bool(c.get("is_required") or c.get("required")),
+            "consent_body": (c.get("body") or c.get("description") or "").strip(),
+        })
+
+    return out
+
+
 def get_login_url(state: str = "") -> str:
     """Generate Facebook OAuth login URL with required permissions."""
     params = {
@@ -202,10 +262,19 @@ async def get_business_pages(business_id: str, access_token: str) -> list[FBPage
 
 
 async def get_page_lead_forms(page_id: str, page_token: str) -> list[FBLeadForm]:
-    """Get Lead Ad forms for a Facebook Page, sorted newest-first."""
+    """Get Lead Ad forms for a Facebook Page, sorted newest-first.
+
+    Pulls `legal_content`, `custom_disclaimer` and `gdpr_consent` alongside
+    the regular `questions` so the wizard can surface consent checkboxes the
+    user otherwise never sees during config (Make.com pulls these by default
+    too — that's why consents appeared there but not here).
+    """
     url = _graph_url(f"{page_id}/leadgen_forms")
     params = {
-        "fields": "id,name,status,leads_count,questions,created_time",
+        "fields": (
+            "id,name,status,leads_count,questions,created_time,"
+            "legal_content,custom_disclaimer,gdpr_consent,privacy_policy"
+        ),
         "access_token": page_token,
     }
     forms: list[FBLeadForm] = []
@@ -219,17 +288,25 @@ async def get_page_lead_forms(page_id: str, page_token: str) -> list[FBLeadForm]
     data = resp.json()
     for f in data.get("data", []):
         raw_status = f.get("status", "")
+        # Merge real questions with synthesized consent-checkbox entries so the
+        # wizard sees one unified list. Consent items carry `is_consent: true`
+        # which the UI uses to render the 🔒 icon + body tooltip.
+        questions = list(f.get("questions") or [])
+        consent_questions = _extract_consent_questions(f)
+        questions.extend(consent_questions)
+
         logger.info(
-            "Form id=%s name=%s status=%s leads=%s created=%s",
+            "Form id=%s name=%s status=%s leads=%s created=%s questions=%d consents=%d",
             f["id"], f.get("name", ""), raw_status,
             f.get("leads_count", 0), f.get("created_time", ""),
+            len(f.get("questions") or []), len(consent_questions),
         )
         forms.append(FBLeadForm(
             form_id=f["id"],
             name=f.get("name", ""),
             status=raw_status or "UNKNOWN",
             leads_count=f.get("leads_count", 0),
-            questions=f.get("questions", []),
+            questions=questions,
             created_time=f.get("created_time", ""),
         ))
 
