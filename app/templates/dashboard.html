@@ -2896,10 +2896,14 @@
         const rowFbOpts = ['<option value="">— wybierz FB pole —</option>']
           .concat(fbQuestions.map(q => {
             const key = q.key || q.name || q.id;
-            const lbl = q.label || key;
+            const originalLbl = q.label || key;
+            let lbl = originalLbl;
+            if (q.is_consent) {
+              lbl = q.consent_kind === 'text' ? `${lbl} (tekst)` : `☑ ${lbl}`;
+            }
             const c = checkTypeCompat(q.type, f.type);
             const tip = c.level === 'block' ? '  🚫' : c.level === 'warn' ? '  ⚠️' : '';
-            return `<option value="${key}">${lbl}${lbl !== key ? ' ('+key+')' : ''}${tip}</option>`;
+            return `<option value="${key}">${lbl}${originalLbl !== key ? ' ('+key+')' : ''}${tip}</option>`;
           })).join('');
         return `
           <div id="edit-missing-row-${fid}" style="padding:0.6rem 0.7rem;background:var(--bg-surface);border:1px solid ${palette.border};border-radius:8px;margin-top:0.4rem;">

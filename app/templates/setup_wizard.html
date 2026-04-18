@@ -2017,8 +2017,12 @@
       const fbOpts = ['<option value="">— wybierz FB pole —</option>']
         .concat((state.selectedForm && state.selectedForm.questions || []).map(q => {
           const key = q.key || q.name || q.id;
-          const lbl = q.label || key;
-          return `<option value="${key}">${lbl}${lbl !== key ? ' ('+key+')' : ''}</option>`;
+          const originalLbl = q.label || key;
+          let lbl = originalLbl;
+          if (q.is_consent) {
+            lbl = q.consent_kind === 'text' ? `${lbl} (tekst)` : `☑ ${lbl}`;
+          }
+          return `<option value="${key}">${lbl}${originalLbl !== key ? ' ('+key+')' : ''}</option>`;
         }))
         .join('');
 
@@ -2041,10 +2045,14 @@
         const rowFbOpts = ['<option value="">— wybierz FB pole —</option>']
           .concat((state.selectedForm && state.selectedForm.questions || []).map(q => {
             const key = q.key || q.name || q.id;
-            const lbl = q.label || key;
+            const originalLbl = q.label || key;
+            let lbl = originalLbl;
+            if (q.is_consent) {
+              lbl = q.consent_kind === 'text' ? `${lbl} (tekst)` : `☑ ${lbl}`;
+            }
             const c = checkTypeCompat(q.type, f.type);
             const hint = c.level === 'block' ? '  🚫' : c.level === 'warn' ? '  ⚠️' : '';
-            return `<option value="${key}">${lbl}${lbl !== key ? ' ('+key+')' : ''}${hint}</option>`;
+            return `<option value="${key}">${lbl}${originalLbl !== key ? ' ('+key+')' : ''}${hint}</option>`;
           }))
           .join('');
         return `
