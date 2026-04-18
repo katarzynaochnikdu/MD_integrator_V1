@@ -507,7 +507,10 @@ async def update_mappings(integration_id: str, request: Request, _session=Depend
     for m in body["field_mappings"]:
         fb = (m.get("fb_field") or "").strip()
         md = (m.get("medidesk_field") or "").strip()
-        if not fb or not md:
+        # Allow empty medidesk_field — it's a persisted "skip" marker from the edit UI
+        # ("— Nie mapuj —" choice). Webhook ignores such entries at delivery time;
+        # here we persist them so the user's choice survives a save/reload cycle.
+        if not fb:
             continue
         mappings.append(FieldMapping(fb_field=fb, medidesk_field=md, confidence=float(m.get("confidence", 0.0) or 0.0)))
 

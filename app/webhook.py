@@ -40,6 +40,11 @@ def build_medidesk_fields(
     )
 
     for mapping in sorted_mappings:
+        # Persisted "skip" marker from the edit UI — user explicitly set this
+        # FB field to "— Nie mapuj —". Keep the record (so the choice survives
+        # reload) but don't produce any Medidesk value for it.
+        if not (mapping.medidesk_field or "").strip():
+            continue
         fb_key = mapping.fb_field
         if fb_key.startswith("__const:") and fb_key.endswith("__"):
             fb_value = fb_key[8:-2]

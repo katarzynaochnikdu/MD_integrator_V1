@@ -10,7 +10,7 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: 'Inter', system-ui, sans-serif;
+      font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
       background: #F8F9FA;
       color: #111827;
       min-height: 100vh;
@@ -282,31 +282,97 @@
     .btn-outline { background: transparent; border: 1px solid #E5E7EB; color: #374151; }
     .btn-outline:hover { border-color: #3b82f6; color: #93c5fd; }
 
-    /* ─── Mapping Modal Styles ─── */
+    /* ─── Mapping Modal Styles ──────────────────────────
+       Mirror of the setup_wizard mapping UI (chips + compat icon + tooltip)
+       so the user gets a consistent experience between initial config and
+       later edits. Grid has 4 cols: FB chip | arrow | MD select | remove. */
     .mapping-row {
-      display: flex;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 72px minmax(0, 1fr) 40px;
       align-items: center;
-      gap: 1rem;
-      padding: 0.8rem;
+      gap: 0.9rem;
+      padding: 0.6rem 0.8rem;
       background: #F9FAFB;
       border: 1px solid #E5E7EB;
       border-radius: 10px;
       margin-bottom: 0.5rem;
+      min-height: 52px;
     }
-    .row-fb { flex: 1; font-weight: 500; font-size: 0.85rem; color: #111827; }
-    .row-arrow { color: #52525b; font-size: 1.1rem; flex: 0 0 auto; }
-    .row-md { flex: 1; }
+    .mapping-row > *, .mapping-row select, .mapping-row input { margin: 0; min-width: 0; }
+
+    /* FB-side chip — green pill identical to setup_wizard for visual parity. */
+    .field-chip {
+      display: flex;
+      align-items: center;
+      padding: 0 0.8rem;
+      height: 38px;
+      box-sizing: border-box;
+      border-radius: 6px;
+      font-size: 0.82rem;
+      font-weight: 500;
+      line-height: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .field-chip.fb {
+      background: rgba(34, 197, 94, 0.1);
+      border: 1px solid rgba(34, 197, 94, 0.35);
+      color: #166534;
+      font-weight: 600;
+    }
+    .field-chip.fb.is-virtual  { border-style: dashed; opacity: 0.9; }
+    .field-chip.fb.is-const {
+      border-style: dashed;
+      border-color: #8b5cf6;
+      color: #6d28d9;
+      background: rgba(139, 92, 246, 0.08);
+    }
+
+    .mapping-arrow {
+      color: #9CA3AF;
+      font-size: 1rem;
+      flex-shrink: 0;
+      text-align: center;
+    }
+    .mapping-arrow.compat-warn, .mapping-arrow.compat-block { font-weight: 700; font-size: 1.05rem; }
+
     .md-select {
       width: 100%;
+      height: 38px;
+      box-sizing: border-box;
       background: #FFFFFF;
-      border: 1px solid #E5E7EB;
+      border: 1px solid rgba(59, 130, 246, 0.3);
       color: #111827;
-      padding: 0.5rem 0.6rem;
+      padding: 0 0.6rem;
       border-radius: 6px;
       font-size: 0.82rem;
       outline: none;
+      cursor: pointer;
     }
     .md-select:focus { border-color: #3b82f6; }
+
+    /* Compat visuals — colored outlines when FB type and MD type don't match. */
+    .mapping-row.has-type-warn .md-select {
+      border-color: rgba(245, 158, 11, 0.55);
+      background: rgba(245, 158, 11, 0.04);
+    }
+    .mapping-row.has-type-block .md-select {
+      border-color: rgba(220, 38, 38, 0.55);
+      background: rgba(220, 38, 38, 0.05);
+    }
+
+    /* Remove button column — compact, no background until hover. */
+    .mapping-row .row-remove {
+      display: flex; justify-content: center; align-items: center;
+    }
+    .mapping-row .row-remove button {
+      background: transparent; border: none; color: #ef4444;
+      cursor: pointer; font-size: 1.1rem; padding: 0.2rem 0.4rem;
+      border-radius: 4px; line-height: 1;
+    }
+    .mapping-row .row-remove button:hover { background: rgba(239, 68, 68, 0.08); }
 
     /* ─── Recent leads table ─── */
     .table-wrap { overflow-x: auto; }
@@ -815,6 +881,7 @@
       
       <div id="edit-missing-required-banner" style="display:none;"></div>
       <div id="edit-mapping-rows"></div>
+      <div id="edit-missing-optional-banner" style="display:none;"></div>
 
       <div style="display:flex; justify-content:flex-end; gap:0.5rem; margin-top:1rem; padding-top:1rem; border-top:1px solid #E5E7EB;">
         <button class="btn btn-outline" onclick="document.getElementById('edit-mappings-modal').style.display='none'">Anuluj</button>
@@ -1907,6 +1974,120 @@
       { key: '__fb_lead_id__',      label: '🔑 ID leada' },
     ];
 
+    // ─── Type compatibility (shared vocabulary with setup_wizard) ────────
+    // Purpose: detect FB ↔ Medidesk type mismatches in the edit modal and
+    // surface them the same way the setup_wizard does (icon + tooltip +
+    // save-button guard). Ports the helpers so dashboard.html is self-contained.
+    function fbLogicalType(rawType) {
+      const t = String(rawType || '').toUpperCase();
+      if (t === 'EMAIL' || t === 'WORK_EMAIL') return 'email';
+      if (t === 'PHONE' || t === 'WORK_PHONE_NUMBER') return 'phone';
+      if (t === 'DOB' || t === 'BIRTHDAY') return 'date';
+      if (t === 'CUSTOM' || t === '') return 'custom';
+      return 'text';
+    }
+    function mdLogicalType(rawType) {
+      const t = String(rawType || '').toLowerCase();
+      if (t.includes('email')) return 'email';
+      if (t.includes('phone') || t === 'tel') return 'phone';
+      if (t.includes('attach') || t === 'file') return 'attach';
+      if (t.includes('checkbox') || t === 'boolean' || t === 'bool' || t === 'consent') return 'checkbox';
+      if (t.includes('select') || t.includes('list') || t === 'dropdown' || t === 'radio') return 'select';
+      if (t.includes('area') || t === 'long_text' || t === 'textarea') return 'text_long';
+      if (t.includes('number') || t === 'int' || t === 'integer' || t === 'float') return 'number';
+      if (t.includes('date')) return 'date';
+      return 'text';
+    }
+    function checkTypeCompat(fbRaw, mdRaw) {
+      if (!mdRaw) return { level: 'ok' };
+      const fb = fbLogicalType(fbRaw);
+      const md = mdLogicalType(mdRaw);
+      if (fb === md) return { level: 'ok' };
+      if ((fb === 'text' && md === 'text_long') || (fb === 'text_long' && md === 'text')) return { level: 'ok' };
+      if (md === 'attach') return { level: 'block', message: 'Pole załącznika MD wymaga pliku z FB. Tekst nie zadziała.' };
+      if (fb === 'attach') return { level: 'block', message: 'Plik z FB można zapisać tylko w polu typu załącznik.' };
+      if (fb === 'custom') {
+        if (md === 'email')    return { level: 'warn', message: 'CUSTOM = wolny tekst — FB nie waliduje formatu email.' };
+        if (md === 'phone')    return { level: 'warn', message: 'CUSTOM = wolny tekst — FB nie waliduje numeru telefonu.' };
+        if (md === 'date')     return { level: 'warn', message: 'CUSTOM = wolny tekst — FB nie waliduje formatu daty.' };
+        if (md === 'number')   return { level: 'warn', message: 'CUSTOM = wolny tekst — FB nie waliduje liczby.' };
+        if (md === 'checkbox') return { level: 'warn', message: 'CUSTOM = wolny tekst — wartość zostanie wymuszona na true/false.' };
+        return { level: 'ok' };
+      }
+      if (md === 'date'     && fb !== 'date')     return { level: 'block', message: 'Pole daty MD wymaga daty z FB.' };
+      if (md === 'number'   && fb !== 'number')   return { level: 'block', message: 'Pole liczbowe MD wymaga liczby.' };
+      if (md === 'checkbox' && fb !== 'checkbox') return { level: 'block', message: 'Pole checkbox MD przyjmuje tylko true/false.' };
+      if (md === 'email'    && fb !== 'email')    return { level: 'block', message: 'Pole email MD wymaga zwalidowanego adresu email z FB.' };
+      if (md === 'phone'    && fb !== 'phone')    return { level: 'block', message: 'Pole telefon MD wymaga zwalidowanego numeru telefonu z FB.' };
+      if ((fb === 'email' || fb === 'phone' || fb === 'date' || fb === 'number') && (md === 'text' || md === 'text_long')) {
+        return { level: 'ok' };
+      }
+      return { level: 'warn', message: 'Typy mogą się nie zgadzać.' };
+    }
+    function compatVisuals(level) {
+      if (level === 'block') return { icon: '🚫', color: '#DC2626' };
+      if (level === 'warn')  return { icon: '⚠️', color: '#D97706' };
+      return { icon: '↔',   color: '#9CA3AF' };
+    }
+
+    // Validate a typed constant value against the target MD field type — same
+    // rules as the setup_wizard, so edits enforce the same data-quality bar
+    // as initial config.
+    function validateConstValue(rawValue, mdRawType) {
+      const md = mdLogicalType(mdRawType);
+      const v = String(rawValue || '').trim();
+      if (!v) return { ok: false, message: 'Wartość nie może być pusta' };
+      if (md === 'email') {
+        return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v)
+          ? { ok: true }
+          : { ok: false, message: 'Niepoprawny email (oczekiwane: nazwa@domena.pl)' };
+      }
+      if (md === 'phone') {
+        const digits = v.replace(/[\s+\-()]/g, '');
+        return /^\d+$/.test(digits) && digits.length >= 6
+          ? { ok: true }
+          : { ok: false, message: 'Numer telefonu — same cyfry, min. 6 (opcjonalnie +, -, spacje, ())' };
+      }
+      if (md === 'number') {
+        return /^-?\d+([.,]\d+)?$/.test(v)
+          ? { ok: true }
+          : { ok: false, message: 'Wymagana liczba (np. 42 albo 3.14)' };
+      }
+      if (md === 'date') {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(v))           return { ok: true };
+        if (/^\d{2}[.\-/]\d{2}[.\-/]\d{4}$/.test(v)) return { ok: true };
+        return { ok: false, message: 'Format daty: YYYY-MM-DD albo DD.MM.YYYY' };
+      }
+      if (md === 'checkbox') {
+        const truthy = ['true','false','1','0','yes','no','tak','nie','on','off'];
+        return truthy.includes(v.toLowerCase())
+          ? { ok: true }
+          : { ok: false, message: 'Wartość boolean: true / false' };
+      }
+      return { ok: true };
+    }
+    // Count current edit-modal mappings that carry a hard type conflict.
+    function countEditTypeBlocks() {
+      const fbQ = editState.integration && editState.integration.fb_form_questions || [];
+      const mdF = editState.integration && editState.integration.medidesk_fields || [];
+      const fbTypeFor = (key) => {
+        if (!key) return undefined;
+        if (key.startsWith('__const:') || key.startsWith('__fb_') || key.startsWith('__CONST__')) return 'CUSTOM';
+        const q = fbQ.find(q => (q.key || q.name || q.label) === key);
+        return q && q.type;
+      };
+      const mdTypeFor = (id) => {
+        const f = mdF.find(f => (f.fieldId || f.id || f.name) === id);
+        return f && f.type;
+      };
+      let n = 0;
+      (editState.mappings || []).forEach(m => {
+        if (!m.medidesk_field) return;
+        if (checkTypeCompat(fbTypeFor(m.fb_field), mdTypeFor(m.medidesk_field)).level === 'block') n++;
+      });
+      return n;
+    }
+
     async function openEditMappingsModal() {
       if (DEMO) {
         editState.integration = JSON.parse(JSON.stringify(MOCK_INTEGRATIONS.find(i => i.id === currentRoomId)));
@@ -1948,24 +2129,43 @@
     function renderEditMappings() {
       const container = document.getElementById('edit-mapping-rows');
       container.innerHTML = '';
-      
+
       const fbQuestions = editState.integration.fb_form_questions || [];
-      const mappedFb = new Set(editState.mappings.map(m => m.fb_field));
-      
-      // Render existing mappings
-      editState.mappings.forEach(m => {
-        const isVirtual = m.fb_field.startsWith('__');
-        container.appendChild(createEditMappingRow(m.fb_field, m.medidesk_field, m.confidence, isVirtual));
-      });
-      
-      // Render unmapped FB fields
+
+      // Section 1 — real FB form fields in FB form order (mapped, skipped or not).
+      // This mirrors the setup_wizard's main list so edit looks identical to create.
       fbQuestions.forEach(q => {
         const key = q.key || q.name || q.label || '';
-        if (!mappedFb.has(key)) {
-          container.appendChild(createEditMappingRow(key, '', 0, false));
+        const m = editState.mappings.find(mp => mp.fb_field === key);
+        const md = (m && m.medidesk_field) || '';
+        const conf = (m && m.confidence) || 0;
+        container.appendChild(createEditMappingRow(key, md, conf, false));
+      });
+
+      // Section 2 — user-added rows (virtuals + constants) in insertion order.
+      editState.mappings.forEach(m => {
+        if (m.fb_field.startsWith('__')) {
+          container.appendChild(createEditMappingRow(m.fb_field, m.medidesk_field, m.confidence, true));
         }
       });
-      
+
+      // Section 3 — orphaned mappings whose fb_field is neither in the current
+      // FB form nor a virtual. Happens when the FB form was edited after the
+      // integration was created. We render them so the user can clean them up;
+      // the row's ✕ button wouldn't appear (it's virtual-only) so we give these
+      // a remove action by treating them as "user-added" for UI purposes.
+      const fbKeySet = new Set(fbQuestions.map(q => q.key || q.name || q.label || ''));
+      editState.mappings.forEach(m => {
+        if (m.fb_field.startsWith('__')) return;
+        if (fbKeySet.has(m.fb_field)) return;
+        // Orphan — render like a virtual so user sees it + can remove it.
+        container.appendChild(createEditMappingRow(m.fb_field, m.medidesk_field, m.confidence, true));
+      });
+
+      // Used-FB set includes skipped mappings, so the "add virtual" dropdown
+      // doesn't offer virtuals the user already added.
+      const mappedFb = new Set(editState.mappings.map(m => m.fb_field));
+
       // "Add virtual field" row
       const unusedVirtuals = VIRTUAL_FIELDS.filter(vf => !mappedFb.has(vf.key));
       if (unusedVirtuals.length > 0) {
@@ -2019,54 +2219,86 @@
       const row = document.createElement('div');
       row.className = 'mapping-row';
       row.dataset.key = fbKey;
-      
+
+      // Figure out what this FB field is:
+      //   - "real" form question (e.g. "email")     → plain chip with the key
+      //   - virtual meta field (__fb_ad_name__)      → nice label + dashed chip
+      //   - user-typed constant (__const:foo__)      → purple dashed chip
+      const isConst = fbKey.startsWith('__const:') || fbKey.startsWith('__CONST__');
       let fbDisplay = fbKey;
-      if (isVirtual) {
-        if (fbKey.startsWith('__const:') && fbKey.endsWith('__')) fbDisplay = '✏️ ' + fbKey.slice(8, -2);
-        else if (fbKey.startsWith('__CONST__')) fbDisplay = '✏️ ' + fbKey.replace('__CONST__', '');
-        else fbDisplay = (VIRTUAL_FIELDS.find(f => f.key === fbKey)?.label) || fbKey;
-      } else {
-        const idx = (editState.integration.fb_form_questions||[]).findIndex(q => (q.key||q.name) === fbKey);
-        if(idx >= 0) fbDisplay = `${idx+1}. ${fbKey}`;
+      let chipExtraClass = '';
+      if (isConst) {
+        if (fbKey.startsWith('__const:') && fbKey.endsWith('__')) fbDisplay = '📌 ' + fbKey.slice(8, -2);
+        else fbDisplay = '📌 ' + fbKey.replace('__CONST__', '');
+        chipExtraClass = 'is-const';
+      } else if (isVirtual) {
+        fbDisplay = (VIRTUAL_FIELDS.find(f => f.key === fbKey) || {}).label || fbKey;
+        chipExtraClass = 'is-virtual';
       }
-      
-      let mdOptions = `<option value="">— Nie mapuj —</option>`;
+
+      // FB raw type — virtuals and constants are free-text, like setup_wizard treats them.
+      const fbRawType = (isVirtual || isConst)
+        ? 'CUSTOM'
+        : ((editState.integration.fb_form_questions || [])
+            .find(q => (q.key || q.name || q.label) === fbKey) || {}).type;
+
+      // Build MD options: annotate each with ⚠️/🚫 against THIS row's FB type so
+      // the user sees incompatibility before selecting. Keep the required "*" and
+      // the allowed-values hint — drop the noisy "(TEXT_FIELD)/(EMAIL)" suffix the
+      // old UI had; the compat icon tells the same story in fewer pixels.
       const mdFieldsArr = editState.integration.medidesk_fields || [];
+      let mdOptions = `<option value="">— Nie mapuj —</option>`;
       mdFieldsArr.forEach(mdf => {
         const fieldKey = mdf.fieldId || mdf.id || mdf.name;
-        const sel = fieldKey === mdFieldId ? 'selected' : '';
+        const selAttr = fieldKey === mdFieldId ? ' selected' : '';
         const req = mdf.required ? ' *' : '';
-        const opts = (mdf.options && mdf.options.length) ? ` [${mdf.options.slice(0,3).join('/')}${mdf.options.length>3?'…':''}]` : '';
-        mdOptions += `<option value="${fieldKey}" ${sel}>${mdf.name || fieldKey}${req} ${mdf.type ? '(' + mdf.type + ')' : ''}${opts}</option>`;
+        const allowed = (mdf.options && mdf.options.length)
+          ? ` [${mdf.options.slice(0, 3).join('/')}${mdf.options.length > 3 ? '…' : ''}]`
+          : '';
+        const optCompat = checkTypeCompat(fbRawType, mdf.type);
+        const hint = optCompat.level === 'block' ? '  🚫'
+                   : optCompat.level === 'warn'  ? '  ⚠️'
+                   : '';
+        const label = (mdf.name || fieldKey) + req + allowed + hint;
+        mdOptions += `<option value="${fieldKey}"${selAttr}>${label}</option>`;
       });
-      
-      let removeBtnHTML = '';
-      if (isVirtual) {
-        removeBtnHTML = `
-          <button style="background:transparent;border:none;color:#ef4444;cursor:pointer;padding:0 0.5rem;" onclick="removeEditMapping('${fbKey}')">✕</button>
-        `;
-      }
-      
+
+      // Compat verdict for the CURRENTLY selected MD field → drives the arrow icon.
+      const compat = checkTypeCompat(fbRawType, mdFieldId);
+      const cv = compatVisuals(compat.level);
+      const arrowTitle = compat.message ? compat.message.replace(/"/g, '&quot;') : '';
+      if (compat.level === 'block') row.classList.add('has-type-block');
+      else if (compat.level === 'warn') row.classList.add('has-type-warn');
+
+      // Remove button is only meaningful for user-added rows (virtuals + constants).
+      // Real FB fields can only be set to "— Nie mapuj —".
+      const canRemove = isVirtual || isConst;
+      const safeKey = fbKey.replace(/"/g, '&quot;');
+
       row.innerHTML = `
-        <div class="row-fb" title="${fbKey}">${fbDisplay}</div>
-        <div class="row-arrow">→</div>
-        <div class="row-md">
-          <select class="md-select">${mdOptions}</select>
-        </div>
-        <div class="row-conf" style="flex:0 0 auto; margin-left:0.5rem;">${removeBtnHTML}</div>
+        <span class="field-chip fb ${chipExtraClass}" title="${safeKey}">${fbDisplay}</span>
+        <span class="mapping-arrow compat-${compat.level}" style="color:${cv.color};cursor:${arrowTitle ? 'help' : 'default'};" title="${arrowTitle}">${cv.icon}</span>
+        <select class="md-select">${mdOptions}</select>
+        <div class="row-remove">${canRemove ? `<button type="button" title="Usuń" data-remove="${safeKey}">✕</button>` : ''}</div>
       `;
-      
+
       const selectEl = row.querySelector('.md-select');
       selectEl.addEventListener('change', () => {
         const val = selectEl.value;
         const existIdx = editState.mappings.findIndex(m => m.fb_field === fbKey);
-        if (val) {
-          if (existIdx >= 0) editState.mappings[existIdx].medidesk_field = val;
-          else editState.mappings.push({ fb_field: fbKey, medidesk_field: val, confidence: 0 });
+        // Persisted "skip": user picking "— Nie mapuj —" should NOT delete the
+        // mapping entry. Keep the row with medidesk_field='' so the choice is
+        // remembered across save/reload (webhook ignores empty-md entries).
+        if (existIdx >= 0) {
+          editState.mappings[existIdx].medidesk_field = val || '';
         } else {
-          if (existIdx >= 0) editState.mappings.splice(existIdx, 1);
+          editState.mappings.push({ fb_field: fbKey, medidesk_field: val || '', confidence: 0 });
         }
+        // Full re-render: recomputes arrow icons, option hints, banner and Save button.
+        renderEditMappings();
       });
+      const removeBtn = row.querySelector('.row-remove button');
+      if (removeBtn) removeBtn.addEventListener('click', () => removeEditMapping(fbKey));
       return row;
     }
     
@@ -2099,14 +2331,21 @@
       return null;
     }
 
+    // Save button is blocked by either missing required fields OR any type-incompatible
+    // mapping (e.g. "full_name" text → MD "email"). Same two-factor logic as the
+    // setup_wizard so the user gets the same feedback whether creating or editing.
     function updateEditSaveButtonState(missingCount) {
       const btn = document.getElementById('btn-save-mappings');
       if (!btn) return;
-      if (missingCount > 0) {
+      const blockCount = countEditTypeBlocks();
+      if (missingCount > 0 || blockCount > 0) {
         btn.disabled = true;
         btn.style.opacity = '0.55';
         btn.style.cursor = 'not-allowed';
-        btn.title = `Uzupełnij ${missingCount} wymagane pole${missingCount > 1 ? 'a' : ''} przed zapisem`;
+        const parts = [];
+        if (missingCount > 0) parts.push(`${missingCount} wymagane pole${missingCount > 1 ? 'a' : ''} bez mapowania`);
+        if (blockCount > 0)   parts.push(`${blockCount} ${blockCount > 1 ? 'mapowania' : 'mapowanie'} z niezgodnym typem (🚫)`);
+        btn.title = `Popraw przed zapisem: ${parts.join(' + ')}`;
       } else {
         btn.disabled = false;
         btn.style.opacity = '';
@@ -2115,54 +2354,89 @@
       }
     }
 
+    // Renders both banners (required + optional) for MD fields without a mapping.
+    // Parity with setup_wizard: required fields block save (red palette), optional
+    // fields are informational (amber palette) so the user can still see + map them.
     function renderEditMissingRequiredBanner() {
-      const banner = document.getElementById('edit-missing-required-banner');
-      if (!banner) return;
+      const reqBanner = document.getElementById('edit-missing-required-banner');
+      const optBanner = document.getElementById('edit-missing-optional-banner');
+      if (!reqBanner) return;
+
       const mdFields = editState.integration.medidesk_fields || [];
       const mappedMd = new Set(
         editState.mappings
           .filter(m => m.medidesk_field && String(m.medidesk_field).trim())
           .map(m => m.medidesk_field)
       );
-      const missing = mdFields.filter(f => f.required && !mappedMd.has(f.fieldId || f.id || f.name));
-      updateEditSaveButtonState(missing.length);
-      if (missing.length === 0) {
-        banner.style.display = 'none';
-        banner.innerHTML = '';
-        return;
-      }
-      const fbOpts = ['<option value="">— wybierz FB pole —</option>']
-        .concat(((editState.integration.fb_form_questions) || []).map(q => {
-          const key = q.key || q.name || q.id;
-          const lbl = q.label || key;
-          return `<option value="${key}">${lbl}${lbl !== key ? ' ('+key+')' : ''}</option>`;
-        })).join('');
-      const rows = missing.map(f => {
+      const requiredMissing = mdFields.filter(f =>  f.required && !mappedMd.has(f.fieldId || f.id || f.name));
+      const optionalMissing = mdFields.filter(f => !f.required && !mappedMd.has(f.fieldId || f.id || f.name));
+      updateEditSaveButtonState(requiredMissing.length);
+
+      const fbQuestions = (editState.integration.fb_form_questions) || [];
+
+      // Build a single missing-MD row. Palette switches between required (red)
+      // and optional (amber) so the visual urgency matches the user's risk.
+      const buildRow = (f, palette) => {
         const fid = f.fieldId || f.id || f.name;
         const suggest = guessConstantDefault(fid);
         const hint = suggest ? `💡 ${suggest.hint}` : '';
+        const rowFbOpts = ['<option value="">— wybierz FB pole —</option>']
+          .concat(fbQuestions.map(q => {
+            const key = q.key || q.name || q.id;
+            const lbl = q.label || key;
+            const c = checkTypeCompat(q.type, f.type);
+            const tip = c.level === 'block' ? '  🚫' : c.level === 'warn' ? '  ⚠️' : '';
+            return `<option value="${key}">${lbl}${lbl !== key ? ' ('+key+')' : ''}${tip}</option>`;
+          })).join('');
         return `
-          <div id="edit-missing-row-${fid}" style="padding:0.6rem 0.7rem;background:#FFFFFF;border:1px solid #FECACA;border-radius:8px;margin-top:0.4rem;">
+          <div id="edit-missing-row-${fid}" style="padding:0.6rem 0.7rem;background:#FFFFFF;border:1px solid ${palette.border};border-radius:8px;margin-top:0.4rem;">
             <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
-              <strong style="color:#b91c1c;font-size:0.82rem;">⚠️ ${f.name || fid}</strong>
+              <strong style="color:${palette.text};font-size:0.82rem;">${palette.icon} ${f.name || fid}</strong>
               <span style="color:#6B7280;font-size:0.72rem;">(${f.type || 'field'})</span>
-              <select class="edit-missing-fb-select" data-fid="${fid}" style="flex:1;min-width:180px;padding:0.3rem 0.5rem;background:#FFFFFF;border:1px solid #E5E7EB;border-radius:6px;font-size:0.78rem;">${fbOpts}</select>
+              <select class="edit-missing-fb-select" data-fid="${fid}" style="flex:1;min-width:180px;padding:0.3rem 0.5rem;background:#FFFFFF;border:1px solid #E5E7EB;border-radius:6px;font-size:0.78rem;">${rowFbOpts}</select>
               <button class="btn btn-outline btn-edit-missing-const" data-fid="${fid}" style="font-size:0.75rem;padding:0.3rem 0.7rem;">✏️ Stała</button>
             </div>
             ${hint ? `<div style="margin-top:0.3rem;font-size:0.7rem;color:#6B7280;">${hint}</div>` : ''}
             <div class="edit-const-editor" style="display:none;"></div>
           </div>
         `;
-      }).join('');
-      banner.innerHTML = `
-        <div style="padding:0.8rem 1rem;background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;margin-bottom:0.8rem;">
-          <div style="color:#b91c1c;font-weight:600;font-size:0.88rem;margin-bottom:0.3rem;">Brakuje wymaganych pól Medidesk (${missing.length})</div>
-          <div style="color:#7f1d1d;font-size:0.75rem;margin-bottom:0.5rem;">Bez nich Medidesk odrzuci leady (HTTP 400). Zmapuj każde wymagane pole — z FB lub jako stała wartość.</div>
-          ${rows}
-        </div>
-      `;
-      banner.style.display = 'block';
-      banner.querySelectorAll('.edit-missing-fb-select').forEach(sel => {
+      };
+
+      // Required banner (blocks save)
+      if (requiredMissing.length === 0) {
+        reqBanner.style.display = 'none';
+        reqBanner.innerHTML = '';
+      } else {
+        const palette = { border: '#FECACA', text: '#b91c1c', icon: '⚠️' };
+        reqBanner.innerHTML = `
+          <div style="padding:0.8rem 1rem;background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;margin-bottom:0.8rem;">
+            <div style="color:#b91c1c;font-weight:600;font-size:0.88rem;margin-bottom:0.3rem;">Brakuje wymaganych pól Medidesk (${requiredMissing.length})</div>
+            <div style="color:#7f1d1d;font-size:0.75rem;margin-bottom:0.5rem;">Bez nich Medidesk odrzuci leady (HTTP 400). Zmapuj każde wymagane pole — z FB lub jako stała wartość.</div>
+            ${requiredMissing.map(f => buildRow(f, palette)).join('')}
+          </div>
+        `;
+        reqBanner.style.display = 'block';
+      }
+
+      // Optional banner (informational — never blocks save)
+      if (!optBanner) return;
+      if (optionalMissing.length === 0) {
+        optBanner.style.display = 'none';
+        optBanner.innerHTML = '';
+      } else {
+        const palette = { border: '#FDE68A', text: '#B45309', icon: '💡' };
+        optBanner.innerHTML = `
+          <div style="padding:0.8rem 1rem;background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;margin-top:0.8rem;">
+            <div style="color:#B45309;font-weight:600;font-size:0.88rem;margin-bottom:0.3rem;">💡 Opcjonalne pola Medidesk bez mapowania (${optionalMissing.length})</div>
+            <div style="color:#92400E;font-size:0.75rem;margin-bottom:0.5rem;">Lead przejdzie bez nich, ale jeśli chcesz — zmapuj je z FB lub ustaw stałą wartość.</div>
+            ${optionalMissing.map(f => buildRow(f, palette)).join('')}
+          </div>
+        `;
+        optBanner.style.display = 'block';
+      }
+
+      // Wire handlers on BOTH banners (shared class names).
+      document.querySelectorAll('.edit-missing-fb-select').forEach(sel => {
         sel.addEventListener('change', () => {
           const fid = sel.dataset.fid;
           const val = sel.value;
@@ -2172,7 +2446,7 @@
           renderEditMappings();
         });
       });
-      banner.querySelectorAll('.btn-edit-missing-const').forEach(btn => {
+      document.querySelectorAll('.btn-edit-missing-const').forEach(btn => {
         btn.addEventListener('click', () => openEditConstantEditor(btn.dataset.fid));
       });
     }
@@ -2202,20 +2476,60 @@
       }
 
       editor.innerHTML = `
-        <div style="margin-top:0.5rem;padding:0.5rem;background:#F3F4F6;border-radius:6px;display:flex;gap:0.4rem;align-items:center;">
-          ${inputHTML}
-          <button class="btn btn-success btn-apply-const" style="padding:0.3rem 0.7rem;font-size:0.75rem;">✓ Dodaj</button>
-          <button class="btn btn-outline btn-cancel-const" style="padding:0.3rem 0.7rem;font-size:0.75rem;">Anuluj</button>
+        <div style="margin-top:0.5rem;padding:0.5rem;background:#F3F4F6;border-radius:6px;display:flex;flex-direction:column;gap:0.3rem;">
+          <div style="display:flex;gap:0.4rem;align-items:center;">
+            ${inputHTML}
+            <button class="btn btn-success btn-apply-const" style="padding:0.3rem 0.7rem;font-size:0.75rem;">✓ Dodaj</button>
+            <button class="btn btn-outline btn-cancel-const" style="padding:0.3rem 0.7rem;font-size:0.75rem;">Anuluj</button>
+          </div>
+          <span class="const-error" style="display:none;font-size:0.7rem;color:#DC2626;line-height:1.2;padding-left:2px;"></span>
         </div>
       `;
       editor.style.display = 'block';
       const input = editor.querySelector('.const-input');
+      const errorEl = editor.querySelector('.const-error');
+      const readValue = () => (input.value || '').trim();
       if (input.tagName === 'INPUT') { input.focus(); input.select(); }
       else input.focus();
-      editor.querySelector('.btn-apply-const').addEventListener('click', () => applyEditConstantToField(fieldId, input.value));
+
+      // Live validation — bounded inputs (checkbox/select) are always valid
+      // because their options are fixed; free-text inputs get regex checks
+      // against the MD field type (email/phone/number/date/checkbox).
+      const isBoundedInput = input.tagName === 'SELECT';
+      const updateValidation = () => {
+        if (isBoundedInput) return true;
+        const result = validateConstValue(readValue(), meta.type);
+        if (result.ok) {
+          errorEl.style.display = 'none';
+          errorEl.textContent = '';
+          input.style.borderColor = '#D1D5DB';
+          input.style.background = '#FFFFFF';
+          return true;
+        }
+        errorEl.textContent = `⚠️ ${result.message}`;
+        errorEl.style.display = 'block';
+        input.style.borderColor = '#DC2626';
+        input.style.background = 'rgba(220,38,38,0.04)';
+        return false;
+      };
+      if (!isBoundedInput) {
+        input.addEventListener('input', updateValidation);
+        if (input.value) updateValidation();
+      }
+
+      const tryApply = () => {
+        if (!updateValidation()) {
+          showToast('Wartość nie pasuje do typu pola — popraw lub anuluj', 'error');
+          if (input.focus) input.focus();
+          return;
+        }
+        applyEditConstantToField(fieldId, readValue());
+      };
+
+      editor.querySelector('.btn-apply-const').addEventListener('click', tryApply);
       editor.querySelector('.btn-cancel-const').addEventListener('click', () => { editor.style.display = 'none'; editor.innerHTML = ''; });
       input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') applyEditConstantToField(fieldId, input.value);
+        if (e.key === 'Enter') { e.preventDefault(); tryApply(); }
         if (e.key === 'Escape') { editor.style.display = 'none'; editor.innerHTML = ''; }
       });
     }
@@ -2244,6 +2558,13 @@
       const missing = mdFields.filter(f => f.required && !mappedMd.has(f.fieldId || f.id || f.name));
       if (missing.length > 0) {
         showToast(`Brakuje wymaganych pól: ${missing.map(f => f.name || f.fieldId).join(', ')}`, 'error');
+        return;
+      }
+      // Guard 2: refuse save if any mapping has an incompatible type (🚫 in UI).
+      // Mirrors the setup_wizard's defense-in-depth.
+      const blockCount = countEditTypeBlocks();
+      if (blockCount > 0) {
+        showToast(`Masz ${blockCount} ${blockCount > 1 ? 'mapowania' : 'mapowanie'} z niezgodnym typem (🚫). Wybierz inne pole MD lub usuń.`, 'error');
         return;
       }
       const btn = document.getElementById('btn-save-mappings');
